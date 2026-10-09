@@ -54,7 +54,8 @@ This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualize
   - colours, the dark-mode pattern, 980px `main` and the single `@media (max-width: 720px)` breakpoint;
   - `.controls`, `.stat`, `.chart-card`, `.legend`, `.tooltip` and `.explain`.
 - Game-specific rules come after the "Washburn Roshambo — game-specific styles" banner. Reuse sibling patterns; don't invent new ones.
-- Game tokens: `--necklace-blue` (= `--series-1`), `--necklace-gold`, `--necklace-none`.
+- Game tokens: `--necklace-blue` (= `--series-1`), `--necklace-gold`, `--necklace-none`, `--role-student` (aqua `#1baf7a` / `#199e70`), `--role-staff` (= `--text-secondary`, a neutral).
+  - Teachers are deliberately neutral: no fourth hue passed the colourblindness check against blue + gold + aqua (violet ≈ blue, orange/red ≈ gold). Use role colours only where blue/gold mean necklaces elsewhere on the page.
   - Gold is `#b8840f` light / `#bc8c20` dark. Both were validated with the dataviz palette validator (lightness band, CVD separation, ≥3:1 contrast). Re-validate if you change them.
 - Population grid: one mark per person (circle = student, square = teacher).
   - Blue is a disk and gold is a ring drawn on top; gold-only holders get a solid gold mark.
@@ -62,6 +63,14 @@ This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualize
   - `MARK_MAX = 0.75` cell caps neighbour overlap at ⅓ of a mark's width.
   - Bigger marks are re-appended so they draw on top.
   - An earlier version split one mark by area. Don't go back to it: small gold holdings disappeared under large blue ones.
+- Histogram ("by role"): stacked bars. X = total necklaces per person in doubling bins; y = people; students on the bottom, teachers on top.
+  - Segments have a 2px surface gap, and totals are labelled above each bar.
+  - People holding zero necklaces are listed in the note, not drawn.
+  - Helper: `roleHistogram(pop)`.
+- Histogram ("by colour"), the card after it: grouped blue/gold bars side by side.
+  - X = necklaces of one colour per person; y = people.
+  - Someone holding both colours is counted in each.
+  - Helper: `colorHistogram(pop)`.
 - Charts: SVG with a fixed `viewBox` (800 wide, margins `{24,16,56,52}`), coloured only through CSS classes. Text uses text tokens, never series colours.
 
 ## Open items

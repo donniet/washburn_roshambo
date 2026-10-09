@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   moveGlyph, matchSummary, classifyHolder, gridLayout, log2Edges, binLabel, histogram,
   linearScale, niceTicks, pct, fmtPct, fmtClock, personLabel, TREND_SERIES,
-  markRadius, sizeKeyValues, MARK_EMPTY, MARK_MIN, MARK_MAX,
+  markRadius, sizeKeyValues, roleHistogram, colorHistogram, MARK_EMPTY, MARK_MIN, MARK_MAX,
 } from './game-view.js';
 import { MOVES, STAFF, STUDENT } from './game.js';
 
@@ -114,4 +114,35 @@ test('sizeKeyValues: powers of ten then the max', () => {
   assert.deepEqual(sizeKeyValues(1750), [1, 10, 100, 1000, 1750]);
   assert.deepEqual(sizeKeyValues(100), [1, 10, 100]);
   assert.deepEqual(sizeKeyValues(1), [1]);
+});
+
+test('roleHistogram: people per total-necklace bin, split by role; empties counted apart', () => {
+  // ids 0–3 students, 4–5 teachers
+  const pop = {
+    size: 6,
+    role: Uint8Array.from([STUDENT, STUDENT, STUDENT, STUDENT, STAFF, STAFF]),
+    blue: Int32Array.from([0, 1, 2, 3, 0, 4]),
+    gold: Int32Array.from([0, 0, 1, 1, 0, 1]),
+  };
+  // totals: students 0, 1, 3, 4 · teachers 0, 5
+  const h = roleHistogram(pop);
+  assert.deepEqual(h.edges, [1, 2, 3, 5, 9]);
+  assert.deepEqual(h.students, [1, 0, 2, 0]);
+  assert.deepEqual(h.staff, [0, 0, 0, 1]);
+  assert.equal(h.emptyStudents, 1);
+  assert.equal(h.emptyStaff, 1);
+});
+
+test('colorHistogram: people per bin of each colour; people without a colour counted apart', () => {
+  const pop = {
+    size: 4,
+    blue: Int32Array.from([0, 1, 3, 4]),
+    gold: Int32Array.from([1, 0, 0, 2]),
+  };
+  const h = colorHistogram(pop);
+  assert.deepEqual(h.edges, [1, 2, 3, 5]);
+  assert.deepEqual(h.blue, [1, 0, 2]);
+  assert.deepEqual(h.gold, [1, 1, 0]);
+  assert.equal(h.noBlue, 1);
+  assert.equal(h.noGold, 2);
 });

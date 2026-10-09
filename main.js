@@ -5,7 +5,7 @@ import {
 } from './game.js';
 import { createSimulation, listStrategies, getStrategy, defaultParams, summarize } from './strategies.js';
 import {
-  renderMatch, createPopulationView, createHistogramView, createTrendView,
+  renderMatch, createPopulationView, createHistogramView, createColorHistogramView, createTrendView,
   personLabel, fmtInt, fmtPct, pct, fmtClock,
 } from './game-view.js';
 
@@ -113,6 +113,7 @@ function init() {
     },
   });
   const histView = createHistogramView({ svg: $('hist-chart'), wrap: $('hist-wrap'), tooltip: $('hist-tooltip'), note: $('hist-note') });
+  const colorView = createColorHistogramView({ svg: $('color-chart'), wrap: $('color-wrap'), tooltip: $('color-tooltip'), note: $('color-note') });
   const trendView = createTrendView({ svg: $('trend-chart'), wrap: $('trend-wrap'), tooltip: $('trend-tooltip') });
 
   let sim = null;
@@ -162,6 +163,7 @@ function init() {
 
     popView.update(pop, (id) => isActive(pop, id, rules));
     histView.update(pop);
+    colorView.update(pop);
     if (full || !playing || sim.history.length % 2 === 0 || sim.done) trendView.update(sim.history, sim.maxTicks);
   }
 

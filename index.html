@@ -185,10 +185,10 @@
 
     <section class="chart-card" aria-labelledby="hist-title">
       <div class="chart-head">
-        <h2 id="hist-title">How many necklaces each person holds</h2>
+        <h2 id="hist-title">How many necklaces each person holds, by role</h2>
         <div class="legend">
-          <span class="key"><span class="swatch blue"></span>Blue necklaces</span>
-          <span class="key"><span class="swatch gold"></span>Gold necklaces</span>
+          <span class="key"><span class="swatch student"></span>Students</span>
+          <span class="key"><span class="swatch staff"></span>Teachers</span>
         </div>
       </div>
       <div class="chart-wrap" id="hist-wrap">
@@ -196,6 +196,21 @@
         <div class="tooltip" id="hist-tooltip" hidden></div>
       </div>
       <p class="note" id="hist-note"></p>
+    </section>
+
+    <section class="chart-card" aria-labelledby="color-title">
+      <div class="chart-head">
+        <h2 id="color-title">How many necklaces each person holds, by colour</h2>
+        <div class="legend">
+          <span class="key"><span class="swatch blue"></span>Blue necklaces</span>
+          <span class="key"><span class="swatch gold"></span>Gold necklaces</span>
+        </div>
+      </div>
+      <div class="chart-wrap" id="color-wrap">
+        <svg id="color-chart" class="chart" viewBox="0 0 800 360" role="img" aria-labelledby="color-title"></svg>
+        <div class="tooltip" id="color-tooltip" hidden></div>
+      </div>
+      <p class="note" id="color-note"></p>
     </section>
 
     <section class="chart-card" aria-labelledby="trend-title">

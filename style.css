@@ -19,6 +19,8 @@
   --necklace-blue:  var(--series-1);
   --necklace-gold:  #b8840f;
   --necklace-none:  #d6d4cc;
+  --role-student:   #1baf7a;
+  --role-staff:     var(--text-secondary);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -42,6 +44,8 @@
     --necklace-blue:  var(--series-1);
     --necklace-gold:  #bc8c20;
     --necklace-none:  #3a3936;
+    --role-student:   #199e70;
+    --role-staff:     var(--text-secondary);
   }
 }
 :root[data-theme="dark"] {
@@ -65,6 +69,8 @@
   --necklace-blue:  var(--series-1);
   --necklace-gold:  #bc8c20;
   --necklace-none:  #3a3936;
+  --role-student:   #199e70;
+  --role-staff:     var(--text-secondary);
 }
 
 * { box-sizing: border-box; }
@@ -409,6 +415,11 @@ fieldset.rule legend {
 
 .chart .bar.blue { fill: var(--necklace-blue); }
 .chart .bar.gold { fill: var(--necklace-gold); }
+.chart .bar.student { fill: var(--role-student); }
+.chart .bar.staff { fill: var(--role-staff); }
+.chart .bar-total text { fill: var(--text-secondary); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.swatch.student { background: var(--role-student); }
+.swatch.staff { background: var(--role-staff); }
 .chart .xtick text { font-size: 13px; }
 .chart .axis-title { fill: var(--text-muted); font-size: 12px; }
 .chart .trend { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }

@@ -367,8 +367,38 @@ function drawYGrid(g, ticks, y, fmt) {
   }
 }
 
-// Histogram: how many people hold 1, 2, 3–4, 5–8 … necklaces of each colour.
-// People holding none of a colour are reported in the note, not drawn (they'd dwarf the rest).
+// People per bin of total necklaces held, split by role. People holding nothing
+// are counted separately (they'd dwarf every other bar).
+export function roleHistogram(pop) {
+  let max = 1, emptyStudents = 0, emptyStaff = 0;
+  const studentTotals = [], staffTotals = [];
+  for (let id = 0; id < pop.size; id++) {
+    const n = pop.blue[id] + pop.gold[id];
+    if (n > max) max = n;
+    const staff = pop.role[id] === STAFF;
+    if (n === 0) { if (staff) emptyStaff++; else emptyStudents++; continue; }
+    (staff ? staffTotals : studentTotals).push(n);
+  }
+  const edges = log2Edges(max);
+  return {
+    edges,
+    students: histogram(studentTotals, edges),
+    staff: histogram(staffTotals, edges),
+    emptyStudents,
+    emptyStaff,
+  };
+}
+
+// Bar path: square bottom, 4px rounded top when `roundTop`.
+function barPath(x, yTop, w, h, roundTop) {
+  const r = roundTop ? Math.min(4, w / 2, h) : 0;
+  return `M${x},${yTop + h}V${yTop + r}q0,${-r} ${r},${-r}h${w - 2 * r}q${r},0 ${r},${r}V${yTop + h}Z`;
+}
+
+const STACK_GAP = 2; // surface gap between stacked segments
+
+// Stacked histogram: how many people hold 1, 2, 3–4, 5–8 … necklaces in total,
+// students on the bottom and teachers stacked on top.
 export function createHistogramView({ svg, wrap, tooltip, note }) {
   svg.setAttribute('viewBox', `0 0 ${VB_W} ${VB_H}`);
   let bars = [];
@@ -378,25 +408,91 @@ export function createHistogramView({ svg, wrap, tooltip, note }) {
     const hit = bars.find((b) => x >= b.x0 && x < b.x1 && y >= M.top && y <= BASE_Y);
     if (!hit) { tooltip.hidden = true; return; }
     placeTooltip(tooltip, wrap, e.clientX, e.clientY,
-      `<strong>${hit.label} necklace${hit.label === '1' ? '' : 's'}</strong>`
-      + `<br>${fmtInt(hit.blue)} people hold this many blue`
-      + `<br>${fmtInt(hit.gold)} people hold this many gold`);
+      `<strong>Holding ${hit.label} necklace${hit.label === '1' ? '' : 's'}</strong>`
+      + `<br><span class="swatch student"></span> ${fmtInt(hit.students)} student${hit.students === 1 ? '' : 's'}`
+      + `<br><span class="swatch staff"></span> ${fmtInt(hit.staff)} teacher${hit.staff === 1 ? '' : 's'}`
+      + `<br><span class="muted">${fmtInt(hit.students + hit.staff)} people in all</span>`);
   });
   svg.addEventListener('mouseleave', () => { tooltip.hidden = true; });
 
   return {
     update(pop) {
-      let max = 1, noBlue = 0, noGold = 0;
-      for (let id = 0; id < pop.size; id++) {
-        max = Math.max(max, pop.blue[id], pop.gold[id]);
-        if (pop.blue[id] === 0) noBlue++;
-        if (pop.gold[id] === 0) noGold++;
+      const { edges, students, staff, emptyStudents, emptyStaff } = roleHistogram(pop);
+      const nb = edges.length - 1;
+      const totals = students.map((v, i) => v + staff[i]);
+      const ticks = niceTicks(Math.max(1, ...totals), 4);
+      const y = linearScale([0, ticks[ticks.length - 1]], [BASE_Y, M.top]);
+      const slot = PW / nb;
+      const barW = Math.min(56, slot * 0.6);
+
+      svg.textContent = '';
+      drawYGrid(svgEl('g', { class: 'grid' }, svg), ticks, y, fmtInt);
+      const gBars = svgEl('g', {}, svg);
+      svgEl('line', { class: 'baseline', x1: M.left, x2: M.left + PW, y1: BASE_Y, y2: BASE_Y }, svg);
+      const gX = svgEl('g', { class: 'xtick' }, svg);
+      const gTotals = svgEl('g', { class: 'bar-total' }, svg);
+      bars = [];
+      for (let i = 0; i < nb; i++) {
+        const cx = M.left + slot * (i + 0.5);
+        const x = cx - barW / 2;
+        const label = binLabel(edges[i], edges[i + 1]);
+        const hS = students[i] > 0 ? Math.max(1.5, BASE_Y - y(students[i])) : 0;
+        const hT = staff[i] > 0 ? Math.max(1.5, BASE_Y - y(staff[i])) : 0;
+        if (hS) svgEl('path', { class: 'bar student', d: barPath(x, BASE_Y - hS, barW, hS, !hT) }, gBars);
+        if (hT) {
+          const base = hS ? BASE_Y - hS - STACK_GAP : BASE_Y;
+          svgEl('path', { class: 'bar staff', d: barPath(x, base - hT, barW, hT, true) }, gBars);
+        }
+        if (totals[i] > 0) {
+          const top = BASE_Y - hS - hT - (hS && hT ? STACK_GAP : 0);
+          svgEl('text', { x: cx, y: top - 6, 'text-anchor': 'middle' }, gTotals).textContent = fmtInt(totals[i]);
+        }
+        svgEl('text', { x: cx, y: BASE_Y + 20, 'text-anchor': 'middle' }, gX).textContent = label;
+        bars.push({ x0: cx - slot / 2, x1: cx + slot / 2, label, students: students[i], staff: staff[i] });
       }
-      const edges = log2Edges(max);
-      const blue = histogram(pop.blue, edges);
-      const gold = histogram(pop.gold, edges);
-      const yMax = Math.max(1, ...blue, ...gold);
-      const ticks = niceTicks(yMax, 4);
+      svgEl('text', { class: 'axis-title', x: M.left + PW / 2, y: VB_H - 8, 'text-anchor': 'middle' }, svg)
+        .textContent = 'Necklaces held by one person (blue + gold)';
+      if (note) note.textContent = `Not shown: ${fmtInt(emptyStudents + emptyStaff)} people hold no necklaces `
+        + `(${fmtInt(emptyStudents)} students, ${fmtInt(emptyStaff)} teachers). `
+        + 'Bins double in width so a few big winners don’t squash everyone else.';
+    },
+  };
+}
+
+// People per bin of necklaces of each colour. People holding none of a colour
+// are counted separately (they'd dwarf every other bar).
+export function colorHistogram(pop) {
+  let max = 1, noBlue = 0, noGold = 0;
+  for (let id = 0; id < pop.size; id++) {
+    max = Math.max(max, pop.blue[id], pop.gold[id]);
+    if (pop.blue[id] === 0) noBlue++;
+    if (pop.gold[id] === 0) noGold++;
+  }
+  const edges = log2Edges(max);
+  return { edges, blue: histogram(pop.blue, edges), gold: histogram(pop.gold, edges), noBlue, noGold };
+}
+
+// Grouped histogram: how many people hold 1, 2, 3–4 … blue necklaces, and how many
+// hold that many gold, side by side in each bin.
+export function createColorHistogramView({ svg, wrap, tooltip, note }) {
+  svg.setAttribute('viewBox', `0 0 ${VB_W} ${VB_H}`);
+  let bars = [];
+
+  svg.addEventListener('mousemove', (e) => {
+    const { x, y } = toViewBox(svg, VB_W, VB_H, e.clientX, e.clientY);
+    const hit = bars.find((b) => x >= b.x0 && x < b.x1 && y >= M.top && y <= BASE_Y);
+    if (!hit) { tooltip.hidden = true; return; }
+    placeTooltip(tooltip, wrap, e.clientX, e.clientY,
+      `<strong>Holding ${hit.label}</strong>`
+      + `<br><span class="swatch blue"></span> ${fmtInt(hit.blue)} people hold this many blue`
+      + `<br><span class="swatch gold"></span> ${fmtInt(hit.gold)} people hold this many gold`);
+  });
+  svg.addEventListener('mouseleave', () => { tooltip.hidden = true; });
+
+  return {
+    update(pop) {
+      const { edges, blue, gold, noBlue, noGold } = colorHistogram(pop);
+      const ticks = niceTicks(Math.max(1, ...blue, ...gold), 4);
       const y = linearScale([0, ticks[ticks.length - 1]], [BASE_Y, M.top]);
       const nb = edges.length - 1;
       const slot = PW / nb;
@@ -404,30 +500,26 @@ export function createHistogramView({ svg, wrap, tooltip, note }) {
 
       svg.textContent = '';
       drawYGrid(svgEl('g', { class: 'grid' }, svg), ticks, y, fmtInt);
-      svgEl('line', { class: 'baseline', x1: M.left, x2: M.left + PW, y1: BASE_Y, y2: BASE_Y }, svg);
       const gBars = svgEl('g', {}, svg);
+      svgEl('line', { class: 'baseline', x1: M.left, x2: M.left + PW, y1: BASE_Y, y2: BASE_Y }, svg);
       const gX = svgEl('g', { class: 'xtick' }, svg);
       bars = [];
       for (let i = 0; i < nb; i++) {
         const cx = M.left + slot * (i + 0.5);
         const label = binLabel(edges[i], edges[i + 1]);
-        [['blue', blue[i], cx - barW - 1], ['gold', gold[i], cx + 1]].forEach(([cls, v, x]) => {
+        // Bars sit side by side with a 2px surface gap between them.
+        [['blue', blue[i], cx - barW - STACK_GAP / 2], ['gold', gold[i], cx + STACK_GAP / 2]].forEach(([cls, v, x]) => {
           if (v <= 0) return;
           const h = Math.max(1.5, BASE_Y - y(v));
-          // 4px rounded top, square at the baseline
-          const r = Math.min(4, barW / 2, h);
-          svgEl('path', {
-            class: `bar ${cls}`,
-            d: `M${x},${BASE_Y}V${BASE_Y - h + r}q0,${-r} ${r},${-r}h${barW - 2 * r}q${r},0 ${r},${r}V${BASE_Y}Z`,
-          }, gBars);
+          svgEl('path', { class: `bar ${cls}`, d: barPath(x, BASE_Y - h, barW, h, true) }, gBars);
         });
         svgEl('text', { x: cx, y: BASE_Y + 20, 'text-anchor': 'middle' }, gX).textContent = label;
         bars.push({ x0: cx - slot / 2, x1: cx + slot / 2, label, blue: blue[i], gold: gold[i] });
       }
       svgEl('text', { class: 'axis-title', x: M.left + PW / 2, y: VB_H - 8, 'text-anchor': 'middle' }, svg)
-        .textContent = 'Necklaces held by one person';
+        .textContent = 'Necklaces of one colour held by one person';
       if (note) note.textContent = `Not shown: ${fmtInt(noBlue)} people hold no blue necklaces and ${fmtInt(noGold)} hold no gold. `
-        + 'Bins double in width so a few big winners don’t squash everyone else.';
+        + 'Someone holding both colours is counted once in blue and once in gold.';
     },
   };
 }
