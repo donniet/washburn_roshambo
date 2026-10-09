@@ -5,7 +5,7 @@
 // never break the rules: every pair it proposes is re-checked here.
 
 import {
-  createGameState, resolveChallenge, isActive, canChallenge, necklaceCount, totals,
+  createGameState, resolveChallenge, isActive, canChallenge, canDecline, necklaceCount, totals,
 } from './game.js';
 
 // ---------- Registry ----------
@@ -18,10 +18,12 @@ const registry = new Map();
 //   create(params) => {
 //     init?(ctx),
 //     selectPairs(ctx) => [[challengerId, targetId], ...],   // disjoint within a tick
+//     respond?(ctx, challengerId, targetId) => 'accept' | 'decline',  // the target's choice
 //     moveChooser?(rng, history, personId, side) => 'rock' | 'paper' | 'scissors',
 //   },
 // }
-// ctx = { pop, rules, rng, tick, isActive(id), canChallenge(a, b) }
+// ctx = { pop, rules, rng, tick, isActive(id), canChallenge(a, b), canDecline(a, b) }
+// respond() is only called when the rules let that target decline; without it, targets accept.
 export function registerStrategy(def) {
   if (!def || !def.id || typeof def.create !== 'function') throw new Error('Strategy needs an id and create()');
   if (registry.has(def.id)) throw new Error(`Strategy "${def.id}" is already registered`);
@@ -52,13 +54,19 @@ registerStrategy({
   id: 'random',
   name: 'Pairs are randomly chosen',
   description: 'Each tick, everyone still in the game who wants to play is shuffled and paired with '
-    + 'a nearby partner they’re allowed to challenge. Who starts the challenge is random too.',
+    + 'a nearby partner they’re allowed to challenge. Who starts the challenge is random too. '
+    + 'When the rules allow a decline, the student flips a weighted coin.',
   params: [
     { key: 'participation', label: 'Chance a free person looks for a game each tick',
       type: 'range', min: 0.05, max: 1, step: 0.05, default: 1 },
+    { key: 'declineRate', label: 'Chance a student declines, when the rules allow it',
+      type: 'range', min: 0, max: 1, step: 0.05, default: 0.5 },
   ],
-  create({ participation = 1 } = {}) {
+  create({ participation = 1, declineRate = 0.5 } = {}) {
     return {
+      respond(ctx) {
+        return ctx.rng.next() < declineRate ? 'decline' : 'accept';
+      },
       selectPairs(ctx) {
         const { pop, rng } = ctx;
         const pool = [];
@@ -108,6 +116,7 @@ export function createSimulation({ cfg = {}, rules = {}, strategyId = 'random', 
     tick: 0,
     isActive: (id) => isActive(pop, id, state.rules),
     canChallenge: (a, b) => canChallenge(pop, a, b, state.rules),
+    canDecline: (a, b) => canDecline(pop, a, b, state.rules),
   };
   strategy.init?.(ctx);
 
@@ -117,12 +126,15 @@ export function createSimulation({ cfg = {}, rules = {}, strategyId = 'random', 
   let done = maxTicks <= 0;
   let lastEvents = [];
 
-  function choosersFor(a, b) {
-    if (!strategy.moveChooser) return undefined;
-    return {
-      chooseA: (rng, h) => strategy.moveChooser(rng, h, a, 0),
-      chooseB: (rng, h) => strategy.moveChooser(rng, h, b, 1),
-    };
+  const respond = strategy.respond ? (a, b) => strategy.respond(ctx, a, b) : undefined;
+
+  function optionsFor(a, b) {
+    const opts = { respond };
+    if (strategy.moveChooser) {
+      opts.chooseA = (rng, h) => strategy.moveChooser(rng, h, a, 0);
+      opts.chooseB = (rng, h) => strategy.moveChooser(rng, h, b, 1);
+    }
+    return opts;
   }
 
   function step() {
@@ -141,7 +153,7 @@ export function createSimulation({ cfg = {}, rules = {}, strategyId = 'random', 
         continue;
       }
       used[a] = used[b] = 1;
-      events.push(resolveChallenge(state, a, b, choosersFor(a, b)));
+      events.push(resolveChallenge(state, a, b, optionsFor(a, b)));
     }
     lastEvents = events;
     history.push(summarize(state, tick, events, rejected));
@@ -178,6 +190,7 @@ function anyChallengePossible(ctx) {
 }
 
 // Per-tick summary used by the charts and counters.
+// `games` counts challenges played this tick and `declined` the ones declined.
 export function summarize(state, tick, events, rejected) {
   const { pop, rules } = state;
   let active = 0, empty = 0, maxHeld = 0;
@@ -189,7 +202,8 @@ export function summarize(state, tick, events, rejected) {
   }
   return {
     tick,
-    games: events.length,
+    games: events.filter((e) => e.outcome === 'played').length,
+    declined: events.filter((e) => e.outcome === 'declined').length,
     rejected,
     active,
     out: pop.size - active,

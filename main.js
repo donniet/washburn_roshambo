@@ -2,10 +2,11 @@
 
 import {
   DEFAULT_RULES, DEFAULT_POPULATION, RULE_OPTIONS, createRng, playMatch, resolveChallenge, isActive,
+  challengeError, declineError,
 } from './game.js';
 import { createSimulation, listStrategies, getStrategy, defaultParams, summarize } from './strategies.js';
 import {
-  renderMatch, createPopulationView, createHistogramView, createColorHistogramView, createTrendView,
+  renderMatch, renderDecline, createPopulationView, createDeclineView, createHistogramView, createColorHistogramView, createTrendView,
   personLabel, fmtInt, fmtPct, pct, fmtClock,
 } from './game-view.js';
 
@@ -69,11 +70,18 @@ function init() {
     const fs = document.createElement('fieldset');
     fs.className = 'control rule';
     fs.innerHTML = `<legend>${group.label}</legend>`;
+
     for (const o of group.options) {
       const label = document.createElement('label');
       label.className = 'radio';
       label.innerHTML = `<input type="radio" name="${key}" value="${o.value}"${o.value === DEFAULT_RULES[key] ? ' checked' : ''}> <span>${o.label}</span>`;
       fs.append(label);
+    }
+    if (group.note) {
+      const note = document.createElement('p');
+      note.className = 'rule-note';
+      note.textContent = group.note;
+      fs.append(note);
     }
     rulesBox.append(fs);
   }
@@ -114,6 +122,7 @@ function init() {
   });
   const histView = createHistogramView({ svg: $('hist-chart'), wrap: $('hist-wrap'), tooltip: $('hist-tooltip'), note: $('hist-note') });
   const colorView = createColorHistogramView({ svg: $('color-chart'), wrap: $('color-wrap'), tooltip: $('color-tooltip'), note: $('color-note') });
+  const declineView = createDeclineView({ svg: $('decline-chart'), wrap: $('decline-wrap'), tooltip: $('decline-tooltip'), note: $('decline-note') });
   const trendView = createTrendView({ svg: $('trend-chart'), wrap: $('trend-wrap'), tooltip: $('trend-tooltip') });
 
   let sim = null;
@@ -131,7 +140,7 @@ function init() {
     const conf = readConfig(formValues());
     sim = createSimulation(conf);
     $('max-ticks').textContent = fmtInt(sim.maxTicks);
-    $('clock-hint').textContent = `${fmtInt(sim.maxTicks)} games × 5 s each = ${fmtClock(sim.maxTicks)} of passing time.`;
+    $('clock-hint').textContent = `${fmtInt(sim.maxTicks)} slots × 5 s each = ${fmtClock(sim.maxTicks)} of passing time. Each game or decline uses one slot.`;
     $('challenger').max = $('target').max = sim.state.pop.size - 1;
     $('status').textContent = `New run · seed “${conf.seed}” · ${fmtInt(sim.state.pop.size)} people`;
     render(true);
@@ -141,6 +150,7 @@ function init() {
     const { pop, rules } = sim.state;
     const h = sim.history[sim.history.length - 1];
     const totalGames = sim.history.reduce((a, x) => a + x.games, 0);
+    const totalDeclined = sim.history.reduce((a, x) => a + (x.declined || 0), 0);
     $('stat-tick').textContent = fmtInt(sim.tick);
     $('stat-clock').textContent = fmtClock(sim.tick);
     $('stat-games').textContent = fmtInt(totalGames);
@@ -153,9 +163,12 @@ function init() {
     $('stat-blue-staff').textContent = fmtPct(pct(h.staffBlue, h.blue));
     $('stat-blue-staff-sub').textContent = `${fmtInt(h.staffBlue)} of ${fmtInt(h.blue)} blue`;
     $('stat-max').textContent = fmtInt(h.maxHeld);
-    $('stat-total').textContent = `${fmtInt(h.blue)} / ${fmtInt(h.gold)}`;
+    $('stat-max-sub').textContent = `of ${fmtInt(h.blue)} blue + ${fmtInt(h.gold)} gold in play`;
+    $('stat-declined').textContent = fmtInt(totalDeclined);
+    $('stat-declined-sub').textContent = rules.declining === 'never'
+      ? 'declining is off' : `${fmtInt(h.declined || 0)} in the last tick`;
     if (sim.done && sim.tick > 0) $('status').textContent = sim.tick >= sim.maxTicks
-      ? `Finished: everyone used their ${fmtInt(sim.maxTicks)} game slots.`
+      ? `Finished: everyone used their ${fmtInt(sim.maxTicks)} time slots.`
       : `Finished early at tick ${fmtInt(sim.tick)}: no legal challenges remain.`;
     $('play').textContent = playing ? '❚❚ Pause' : sim.done ? '✓ Finished' : '▶ Run';
     $('play').disabled = $('step').disabled = $('to-end').disabled = sim.done;
@@ -164,6 +177,7 @@ function init() {
     popView.update(pop, (id) => isActive(pop, id, rules));
     histView.update(pop);
     colorView.update(pop);
+    declineView.update(pop);
     if (full || !playing || sim.history.length % 2 === 0 || sim.done) trendView.update(sim.history, sim.maxTicks);
   }
 
@@ -207,28 +221,43 @@ function init() {
 
   function showEvent(ev, prefix = '') {
     const { pop } = sim.state;
+    const labels = [`${prefix}${personLabel(pop, ev.challenger)}`, personLabel(pop, ev.target)];
+    if (ev.outcome === 'declined') { renderDecline(matchBox, ev, { labels }); return; }
     renderMatch(matchBox, { rounds: ev.rounds, winner: ev.winner === ev.challenger ? 0 : 1, coinFlip: ev.coinFlip },
       { labels: [`${prefix}${personLabel(pop, ev.challenger)}`, personLabel(pop, ev.target)], detail: ev });
   }
 
-  $('challenge').addEventListener('click', () => {
+  function showError(text) {
+    matchBox.innerHTML = '';
+    const p = document.createElement('p');
+    p.className = 'match-error';
+    p.textContent = text;
+    matchBox.append(p);
+  }
+
+  // Manual challenge from the ID boxes. `decline` asks the target to decline.
+  function manualChallenge(decline) {
     stop();
     const c = Number($('challenger').value), t = Number($('target').value);
-    const ev = resolveChallenge(sim.state, c, t);
-    if (!ev.ok) {
-      matchBox.innerHTML = '';
-      const p = document.createElement('p');
-      p.className = 'match-error';
-      p.textContent = `Not allowed: ${ev.reason}.`;
-      matchBox.append(p);
-      return;
+    const { pop, rules } = sim.state;
+    if (decline) {
+      const reason = challengeError(pop, c, t, rules) || declineError(pop, c, t, rules);
+      if (reason) { showError(`Can’t decline: ${reason}.`); return; }
     }
+    const ev = resolveChallenge(sim.state, c, t, { respond: () => (decline ? 'decline' : 'accept') });
+    if (!ev.ok) { showError(`Not allowed: ${ev.reason}.`); return; }
     showEvent(ev);
     // A manual challenge changes the population between ticks: refresh the latest summary.
     const last = sim.history[sim.history.length - 1];
-    sim.history[sim.history.length - 1] = { ...summarize(sim.state, last.tick, [], last.rejected), games: last.games + 1 };
+    sim.history[sim.history.length - 1] = {
+      ...summarize(sim.state, last.tick, [], last.rejected),
+      games: last.games + (ev.outcome === 'played' ? 1 : 0),
+      declined: (last.declined || 0) + (ev.outcome === 'declined' ? 1 : 0),
+    };
     render(true);
-  });
+  }
+  $('challenge').addEventListener('click', () => manualChallenge(false));
+  $('decline').addEventListener('click', () => manualChallenge(true));
   $('random-pair').addEventListener('click', () => {
     const rng = practiceRng, { pop } = sim.state;
     $('challenger').value = rng.int(pop.size);

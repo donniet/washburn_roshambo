@@ -84,8 +84,10 @@ export function playMatch(rng, chooseA = uniformMove, chooseB = uniformMove) {
 export const DEFAULT_RULES = {
   transfer: 'oneRandom',
   staffVsStudent: 'allowed',
+  staffVsStaff: 'allowed',
   zeroNecklaces: 'out',
-  maxGamesPerPerson: 300, // 25 minutes of passing time ÷ 5 seconds per game
+  declining: 'never',
+  maxGamesPerPerson: 300, // time slots: 25 minutes of passing time ÷ 5 seconds per game
 };
 
 // Labels for every rule variation. The UI builds its radio groups from this,
@@ -108,11 +110,28 @@ export const RULE_OPTIONS = {
       { value: 'never', label: 'Students and teachers never play each other' },
     ],
   },
+  staffVsStaff: {
+    label: 'Teachers vs. teachers',
+    options: [
+      { value: 'allowed', label: 'Teachers CAN challenge each other' },
+      { value: 'never', label: 'Teachers CANNOT challenge each other' },
+    ],
+  },
   zeroNecklaces: {
     label: 'People with zero necklaces',
     options: [
       { value: 'out', label: 'CANNOT challenge and are OUT' },
       { value: 'canChallenge', label: 'CAN still challenge (nothing to lose)' },
+    ],
+  },
+  declining: {
+    label: 'Declining a challenge',
+    note: 'Teachers always accept. A decline uses up the time slot for both people, and nobody’s necklaces change.',
+    options: [
+      { value: 'never', label: 'No declines: every challenge is played' },
+      { value: 'ifFewer', label: 'A student with FEWER necklaces than the challenger may decline' },
+      { value: 'ifMore', label: 'A student with MORE necklaces than the challenger may decline' },
+      { value: 'always', label: 'A student may always decline' },
     ],
   },
 };
@@ -141,8 +160,12 @@ export function createPopulation(cfg, rng) {
     role: new Uint8Array(n),
     blue: new Int32Array(n),
     gold: new Int32Array(n),
-    gamesPlayed: new Int32Array(n),
-    strategyId: new Uint8Array(n), // reserved for per-person strategies
+    gamesPlayed: new Int32Array(n),   // challenges actually played
+    slotsUsed: new Int32Array(n),     // time slots used: games played + declines on either side
+    declineChances: new Int32Array(n), // challenges this person was allowed to decline
+    declines: new Int32Array(n),      // times this person declined a challenge
+    declinedAgainst: new Int32Array(n), // times this person's challenge was declined
+    strategyId: new Uint8Array(n),    // reserved for per-person strategies
   };
   const students = [], staff = [];
   for (let id = 0; id < n; id++) {
@@ -180,20 +203,15 @@ export function totals(pop) {
 }
 
 export function snapshot(pop) {
-  return {
-    ...pop,
-    role: pop.role.slice(),
-    blue: pop.blue.slice(),
-    gold: pop.gold.slice(),
-    gamesPlayed: pop.gamesPlayed.slice(),
-    strategyId: pop.strategyId.slice(),
-  };
+  const copy = { ...pop };
+  for (const k in pop) if (ArrayBuffer.isView(pop[k])) copy[k] = pop[k].slice();
+  return copy;
 }
 
 // ---------- Eligibility & transfer ----------
 
 export function isActive(pop, id, rules) {
-  if (pop.gamesPlayed[id] >= rules.maxGamesPerPerson) return false;
+  if (pop.slotsUsed[id] >= rules.maxGamesPerPerson) return false;
   if (rules.zeroNecklaces === 'out' && necklaceCount(pop, id) === 0) return false;
   return true;
 }
@@ -204,17 +222,37 @@ export function challengeError(pop, challenger, target, rules) {
   if (!Number.isInteger(challenger) || challenger < 0 || challenger >= pop.size) return 'No such challenger';
   if (!Number.isInteger(target) || target < 0 || target >= pop.size) return 'No such target';
   if (challenger === target) return 'Can’t challenge yourself';
-  if (pop.gamesPlayed[challenger] >= rules.maxGamesPerPerson) return 'Challenger is out of games';
-  if (pop.gamesPlayed[target] >= rules.maxGamesPerPerson) return 'Target is out of games';
+  if (pop.slotsUsed[challenger] >= rules.maxGamesPerPerson) return 'Challenger is out of time slots';
+  if (pop.slotsUsed[target] >= rules.maxGamesPerPerson) return 'Target is out of time slots';
   if (necklaceCount(pop, target) === 0) return 'Target has no necklaces to win';
   if (rules.zeroNecklaces === 'out' && necklaceCount(pop, challenger) === 0) return 'Challenger has no necklaces and is out';
   const cRole = pop.role[challenger], tRole = pop.role[target];
   if (cRole !== tRole) {
     if (rules.staffVsStudent === 'never') return 'Students and teachers don’t play each other';
     if (rules.staffVsStudent === 'studentsMayChallengeStaff' && cRole === STAFF) return 'Teachers can’t challenge students';
+  } else if (cRole === STAFF && rules.staffVsStaff === 'never') {
+    return 'Teachers can’t challenge each other';
   }
   return null;
 }
+
+// Why `target` may not decline a (legal) challenge from `challenger`, or null if they may.
+// Teachers always accept; for students it depends on the declining rule and on
+// who holds more necklaces ("points"). Equal counts are neither fewer nor more.
+export function declineError(pop, challenger, target, rules) {
+  if (pop.role[target] === STAFF) return 'Teachers always accept challenges';
+  const mine = necklaceCount(pop, target), theirs = necklaceCount(pop, challenger);
+  switch (rules.declining) {
+    case 'always': return null;
+    case 'ifFewer': return mine < theirs ? null : 'Only a student with fewer necklaces than the challenger may decline';
+    case 'ifMore': return mine > theirs ? null : 'Only a student with more necklaces than the challenger may decline';
+    case 'never':
+    default: return 'Declining isn’t allowed';
+  }
+}
+
+export const canDecline = (pop, challenger, target, rules) =>
+  declineError(pop, challenger, target, rules) === null;
 
 export const canChallenge = (pop, challenger, target, rules) =>
   challengeError(pop, challenger, target, rules) === null;
@@ -243,20 +281,39 @@ export function createGameState({ cfg = {}, rules = {}, seed = Date.now() } = {}
   return { pop: createPopulation(cfg, rng), rules: { ...DEFAULT_RULES, ...rules }, rng, seed };
 }
 
-// Play one challenge: validate, best-of-3, transfer, count the game for both.
-export function resolveChallenge(state, challenger, target, { chooseA, chooseB } = {}) {
+// Resolve one challenge. Three possible results:
+//   { ok: false, reason }        — the challenge isn't allowed; nothing changes
+//   { ok: true, outcome: 'declined' } — the target declined; both use a time slot, no necklaces move
+//   { ok: true, outcome: 'played' }   — best-of-3, transfer, both use a slot and play a game
+// `respond(challenger, target)` is the target's choice ('accept' | 'decline'). It's only
+// asked when the rules let this target decline; otherwise the challenge is played.
+export function resolveChallenge(state, challenger, target, { chooseA, chooseB, respond } = {}) {
   const { pop, rules, rng } = state;
   const reason = challengeError(pop, challenger, target, rules);
   if (reason) return { ok: false, challenger, target, reason };
   const before = [holdings(pop, challenger), holdings(pop, target)];
+  const mayDecline = canDecline(pop, challenger, target, rules);
+  if (mayDecline) pop.declineChances[target]++;
+  if (mayDecline && respond && respond(challenger, target) === 'decline') {
+    pop.slotsUsed[challenger]++;
+    pop.slotsUsed[target]++;
+    pop.declines[target]++;
+    pop.declinedAgainst[challenger]++;
+    return {
+      ok: true, outcome: 'declined', challenger, target, winner: null, loser: null,
+      rounds: [], coinFlip: false, moved: { blue: 0, gold: 0 }, before, after: before,
+    };
+  }
   const match = playMatch(rng, chooseA, chooseB);
   const winner = match.winner === 0 ? challenger : target;
   const loser = match.winner === 0 ? target : challenger;
   const moved = transfer(pop, winner, loser, rules, rng);
   pop.gamesPlayed[challenger]++;
   pop.gamesPlayed[target]++;
+  pop.slotsUsed[challenger]++;
+  pop.slotsUsed[target]++;
   return {
-    ok: true, challenger, target, winner, loser,
+    ok: true, outcome: 'played', challenger, target, winner, loser,
     rounds: match.rounds, coinFlip: match.coinFlip, moved,
     before, after: [holdings(pop, challenger), holdings(pop, target)],
   };

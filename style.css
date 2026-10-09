@@ -317,6 +317,13 @@ fieldset.rule legend {
 .match-controls .control > label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
 .divider { align-self: stretch; width: 1px; background: var(--border); }
 .match-box { margin-top: 12px; min-height: 120px; }
+.rule-note { margin: 6px 0 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.35; }
+.decline-box {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 14px; border: 1px dashed var(--axis); border-radius: 10px;
+}
+.decline-icon { font-size: 2.2rem; line-height: 1.2; }
+.match.declined .before-after { margin-top: 10px; }
 .match-error { margin: 0; padding: 12px; border: 1px dashed var(--axis); border-radius: 8px; color: var(--text-secondary); }
 
 .match-head {
@@ -416,6 +423,7 @@ fieldset.rule legend {
 .swatch.dot.shape-square { background: transparent; border: 1.5px solid var(--text-secondary); border-radius: 3px; }
 .swatch.line.blue { background: var(--necklace-blue); }
 .swatch.line.gold { background: var(--necklace-gold); }
+.swatch.line.student { background: var(--role-student); }
 .swatch.line.neutral { background: repeating-linear-gradient(90deg, var(--text-muted) 0 4px, transparent 4px 7px); }
 .tooltip .swatch { width: 10px; height: 10px; vertical-align: -1px; }
 
@@ -431,6 +439,8 @@ fieldset.rule legend {
 .chart .trend { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .trend.blue { stroke: var(--necklace-blue); }
 .chart .trend.gold { stroke: var(--necklace-gold); }
+.chart .trend.student { stroke: var(--role-student); }
+.chart .trend-end.student { fill: var(--role-student); }
 .chart .trend.neutral { stroke: var(--text-muted); stroke-dasharray: 5 4; }
 .chart .trend-end { stroke: var(--surface-1); stroke-width: 2; }
 .chart .trend-end.blue { fill: var(--necklace-blue); }

@@ -23,30 +23,43 @@ Keep the JS in these four files (the user asked for few files); each has a sibli
 Dependencies go one way: `main.js` → `game-view.js` / `strategies.js` → `game.js`.
 
 ## Model and rules
-- **Population:** typed arrays `role` (0 student / 1 staff), `blue`, `gold`, `gamesPlayed`, and `strategyId`.
+- **Population:** typed arrays `role` (0 student / 1 staff), `blue`, `gold`, `gamesPlayed`, `slotsUsed`, `declines`, `declinedAgainst`, and `strategyId`.
+  - `slotsUsed` counts games plus declines on either side; it's what the per-person time limit checks.
+  - `declines` is how often this person declined; `declinedAgainst` is how often their own challenges were declined.
   - `strategyId` is reserved for per-person strategies.
   - Students are IDs `0…numStudents-1`; staff follow.
 - **Dealing necklaces:** if there are fewer necklaces than people, they go to a random (seeded) subset of the group. Extras are dealt randomly within the group. An empty group gets none.
 - **Rule variations** (in `RULE_OPTIONS`; the UI builds its radio groups from it):
   - `transfer`: `all` | `oneRandom` (default; weighted by the loser's counts) | `goldFirst` | `blueFirst`;
   - `staffVsStudent`: `allowed` | `studentsMayChallengeStaff` | `never`. Challenges are *directed*;
+  - `staffVsStaff`: `allowed` | `never`;
   - `zeroNecklaces`: `out` | `canChallenge`;
-  - `maxGamesPerPerson`: default **300**. 25 min ÷ 5 s = 300; NOTES.md's "1500" was an arithmetic slip.
+  - `declining`: `never` (default) | `ifFewer` | `ifMore` | `always`. The group has a `note` that the UI shows under it;
+  - `maxGamesPerPerson`: shown in the UI as "Time slots per person", default **300**. 25 min ÷ 5 s = 300; NOTES.md's "1500" was an arithmetic slip.
 - **Decisions confirmed with the user:**
   - The winner takes from the loser.
   - Ties are replayed and don't count. After 50 rounds, a coin flip decides.
   - A target must hold at least 1 necklace.
   - A zero-necklace challenger who loses gives nothing.
-- **Time:** one tick is one 5 s game slot, and a person plays at most one game per tick. A run ends at `maxGamesPerPerson` ticks, or earlier when no legal challenge remains.
+- **Declines** (confirmed with the user):
+  - Only students may decline; teachers always accept.
+  - "Fewer/more" compares total necklaces, strictly, so a tie means no decline.
+  - A decline uses one time slot for both people and moves nothing. There's no limit on declines; their effect is shown in charts instead.
+  - `declineError`/`canDecline` decide whether a decline is allowed.
+  - `resolveChallenge(state, c, t, { respond })` returns one of three results: `ok: false` (not allowed), `outcome: 'declined'` or `outcome: 'played'`.
+  - `respond` is only consulted when a decline is allowed.
+- **Time:** one tick is one 5 s slot, and a person plays or declines at most once per tick. A run ends at `maxGamesPerPerson` ticks, or earlier when no legal challenge remains.
 
 ## Strategies (expected to grow)
 - Add one `registerStrategy({ id, name, description, params, create })` block in `strategies.js`.
-  - `create(params)` returns `{ init?, selectPairs(ctx), moveChooser? }`.
-  - `ctx = { pop, rules, rng, tick, isActive(id), canChallenge(a, b) }`.
+  - `create(params)` returns `{ init?, selectPairs(ctx), respond?, moveChooser? }`.
+    - `respond(ctx, challenger, target)` is the *target's* choice: `'accept'` or `'decline'`.
+  - `ctx = { pop, rules, rng, tick, isActive(id), canChallenge(a, b), canDecline(a, b) }`.
 - The UI builds parameter controls from `params` automatically.
 - The scheduler re-validates every proposed pair: pairs must be disjoint and pass `canChallenge`. Rejected pairs are counted in `history[].rejected`.
 - `moveChooser(rng, history, personId, side)` is the hook for biased or adaptive RPS play.
-- Only `random` ("Pairs are randomly chosen") exists so far.
+- Only `random` ("Pairs are randomly chosen") exists so far. Its params are `participation` and `declineRate` (default 0.5; only matters when a declining rule is on).
+- **Next planned:** a student-agency strategy, choosing whom to challenge and when to decline, built on `selectPairs` + `respond`.
 
 ## Look and feel
 This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualizer`, difficult-tech.com/central_limit_dice/) and must look like part of the same set.
@@ -76,6 +89,14 @@ This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualize
   - X = necklaces of one colour per person; y = people.
   - Someone holding both colours is counted in each.
   - Helper: `colorHistogram(pop)`.
+- "Does declining pay off?" chart (`declinePayoff`):
+  - Students are grouped by *decline rate* = `declines / declineChances`. `declineChances` counts challenges where the rules let them decline, whether or not they did.
+  - Bins: 0%, 1–24%, 25–49%, 50–74%, 75–99%, 100%. Bar = average necklaces held now.
+  - Students with no chances are reported in the note; teachers are excluded.
+  - Known bias: extreme rates come mostly from students with only 1–2 chances (early losers). So even a coin-flip strategy doesn't give flat bars.
+  - Grouping by an assigned per-student tendency (from a strategy) would avoid this.
+- "Over time" also plots the % of each tick's challenges that were declined (aqua line).
+- The "Challenges declined" stat tile replaced "Blue / gold in play"; that total now sits in the "Most held" tile's sub-line.
 - Charts: SVG with a fixed `viewBox` (800 wide, margins `{24,16,56,52}`), coloured only through CSS classes. Text uses text tokens, never series colours.
 
 ## Deployment

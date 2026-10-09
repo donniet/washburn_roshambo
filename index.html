@@ -47,6 +47,7 @@
         </div>
         <button type="button" id="random-pair">Random pair</button>
         <button type="button" id="challenge" class="primary">Play challenge</button>
+        <button type="button" id="decline" title="The target declines, if the rules let them">Target declines</button>
       </div>
       <p class="note">A challenge uses the current rules and changes the population below. Click people in the population grid to fill in the IDs.</p>
       <div id="match" class="match-box" aria-live="polite"></div>
@@ -73,7 +74,7 @@
           <input type="number" id="numGold" name="numGold" min="0" value="150">
         </div>
         <div class="control">
-          <label for="maxGamesPerPerson">Games per person</label>
+          <label for="maxGamesPerPerson">Time slots per person</label>
           <input type="number" id="maxGamesPerPerson" name="maxGamesPerPerson" min="1" max="5000" value="300">
         </div>
         <div class="control">
@@ -155,12 +156,12 @@
       <div class="stat">
         <span class="label">Most held by one person</span>
         <span class="value" id="stat-max">0</span>
-        <span class="sub">necklaces</span>
+        <span class="sub" id="stat-max-sub"></span>
       </div>
       <div class="stat">
-        <span class="label">Blue / gold in play</span>
-        <span class="value" id="stat-total">0</span>
-        <span class="sub">never changes</span>
+        <span class="label">Challenges declined</span>
+        <span class="value" id="stat-declined">0</span>
+        <span class="sub" id="stat-declined-sub"></span>
       </div>
     </section>
 
@@ -226,12 +227,25 @@
           <span class="key"><span class="swatch line gold"></span>Gold held by students</span>
           <span class="key"><span class="swatch line blue"></span>Blue held by teachers</span>
           <span class="key"><span class="swatch line neutral"></span>People with no necklaces</span>
+          <span class="key"><span class="swatch line student"></span>Challenges declined</span>
         </div>
       </div>
       <div class="chart-wrap" id="trend-wrap">
         <svg id="trend-chart" class="chart" viewBox="0 0 800 360" role="img" aria-labelledby="trend-title"></svg>
         <div class="tooltip" id="trend-tooltip" hidden></div>
       </div>
+    </section>
+
+    <section class="chart-card" aria-labelledby="decline-title">
+      <div class="chart-head">
+        <h2 id="decline-title">Does declining pay off?</h2>
+        <span class="legend"><span class="key"><span class="swatch student"></span>Average necklaces held by students</span></span>
+      </div>
+      <div class="chart-wrap" id="decline-wrap">
+        <svg id="decline-chart" class="chart" viewBox="0 0 800 360" role="img" aria-labelledby="decline-title"></svg>
+        <div class="tooltip" id="decline-tooltip" hidden></div>
+      </div>
+      <p class="note" id="decline-note"></p>
     </section>
 
     <details class="explain">
@@ -241,6 +255,7 @@
         <li><strong>Gold first vs. blue first:</strong> which rule moves gold necklaces into students' hands faster?</li>
         <li><strong>Teachers can't challenge students:</strong> does it protect students, or teachers?</li>
         <li><strong>Zero necklaces can still challenge:</strong> people with nothing to lose keep playing. What does that do to the big winners?</li>
+        <li><strong>Declining:</strong> let students with fewer necklaces decline. In "Does declining pay off?", do students who decline more of their chances hold on to more necklaces? Compare with "students with more necklaces may decline". With the random strategy, everyone declines at the same rate on average, so the bars should look about level.</li>
         <li>Keep the same seed and change one rule at a time, so the only difference is the rule.</li>
       </ul>
     </details>
@@ -248,10 +263,12 @@
       <summary>How the simulation works</summary>
       <ul>
         <li>Time moves in <strong>ticks</strong>, each one 5-second game slot. A person plays at most one game per tick
-          and no more than the "Games per person" limit (25 minutes ÷ 5 s = 300).</li>
+          and uses at most "Time slots per person" (25 minutes ÷ 5 s = 300).</li>
         <li>A challenge is <em>directed</em>: the challenger picks a target. The target must have at least one necklace to lose.</li>
         <li>"Teachers CANNOT challenge students" still lets a student challenge a teacher. Pick "never play each other" to keep them apart completely.</li>
         <li>If someone with no necklaces challenges and loses, nothing changes hands.</li>
+        <li>Under a declining rule, a student may refuse a challenge. The refusal still uses up that 5-second slot for both people, so it
+          counts toward "Time slots per person". Teachers always accept. "Fewer" and "more" compare total necklaces; a tie means no decline.</li>
         <li>Any setup change starts a new run. The same seed and settings always give the same result.</li>
       </ul>
     </details>

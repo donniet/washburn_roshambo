@@ -189,6 +189,36 @@ export function renderMatch(container, match, { labels = ['Player A', 'Player B'
   container.append(root);
 }
 
+// A declined challenge: no rounds, both people lose the time slot.
+export function renderDecline(container, ev, { labels }) {
+  container.textContent = '';
+  const root = htmlEl('div', { class: 'match declined' });
+  const head = htmlEl('div', { class: 'match-head' });
+  head.append(
+    htmlEl('span', { class: 'player' }, labels[0]),
+    htmlEl('span', { class: 'vs' }, 'vs'),
+    htmlEl('span', { class: 'player right' }, labels[1]),
+  );
+  const box = htmlEl('div', { class: 'decline-box' });
+  const icon = htmlEl('span', { class: 'decline-icon', 'aria-hidden': 'true' });
+  icon.append(htmlEl('span', { class: 'glyph' }, '✋'));
+  const text = htmlEl('div');
+  text.append(
+    htmlEl('strong', {}, `${labels[1]} declined the challenge`),
+    htmlEl('div', { class: 'moved' }, 'Both of them used up this time slot. No necklaces changed hands.'),
+  );
+  box.append(icon, text);
+  const table = htmlEl('div', { class: 'before-after' });
+  [0, 1].forEach((side) => {
+    table.append(htmlEl('span', { class: 'ba-name' }, labels[side]),
+      htmlEl('span', {}, necklaceText(ev.before[side])),
+      htmlEl('span', { class: 'arrow' }, '→'),
+      htmlEl('span', {}, necklaceText(ev.after[side])));
+  });
+  root.append(head, box, table);
+  container.append(root);
+}
+
 // ---------- 2. Population view ----------
 
 const POP_W = 800, POP_MAX_H = 300;
@@ -276,7 +306,9 @@ export function createPopulationView({ svg, wrap, tooltip, onPick, sizeKey }) {
     const { pop, isActive } = current;
     placeTooltip(tooltip, wrap, e.clientX, e.clientY,
       `<strong>${personLabel(pop, id)}</strong><br>${necklaceText({ blue: pop.blue[id], gold: pop.gold[id] })}`
-      + `<br><span class="muted">${pop.gamesPlayed[id]} games · ${isActive(id) ? 'still playing' : 'out'}</span>`);
+      + `<br><span class="muted">${pop.gamesPlayed[id]} games · ${isActive(id) ? 'still playing' : 'out'}</span>`
+      + (pop.declines[id] || pop.declinedAgainst[id]
+        ? `<br><span class="muted">declined ${pop.declines[id]} of ${pop.declineChances[id]} chances · was declined ${pop.declinedAgainst[id]}</span>` : ''));
   });
   svg.addEventListener('mouseleave', () => { tooltip.hidden = true; });
   if (onPick) svg.addEventListener('click', (e) => {
@@ -532,6 +564,103 @@ export function createColorHistogramView({ svg, wrap, tooltip, note }) {
   };
 }
 
+// Decline-rate groups: the share of their chances to decline that a student used.
+export const DECLINE_RATE_BINS = [
+  { label: '0%', test: (r) => r === 0 },
+  { label: '1–24%', test: (r) => r > 0 && r < 0.25 },
+  { label: '25–49%', test: (r) => r >= 0.25 && r < 0.5 },
+  { label: '50–74%', test: (r) => r >= 0.5 && r < 0.75 },
+  { label: '75–99%', test: (r) => r >= 0.75 && r < 1 },
+  { label: '100%', test: (r) => r === 1 },
+];
+
+// Students grouped by decline rate (declines ÷ chances to decline), with the average
+// number of necklaces each group holds now. Students who never had a chance to decline
+// are reported separately; teachers always accept, so they're left out.
+export function declinePayoff(pop) {
+  const acc = DECLINE_RATE_BINS.map(() => ({ people: 0, necklaces: 0, empty: 0, chances: 0 }));
+  const none = { people: 0, necklaces: 0 };
+  for (let id = 0; id < pop.size; id++) {
+    if (pop.role[id] === STAFF) continue;
+    const n = pop.blue[id] + pop.gold[id];
+    const chances = pop.declineChances[id];
+    if (chances === 0) { none.people++; none.necklaces += n; continue; }
+    const rate = pop.declines[id] / chances;
+    const b = acc[DECLINE_RATE_BINS.findIndex((bin) => bin.test(rate))];
+    b.people++;
+    b.necklaces += n;
+    b.chances += chances;
+    if (n === 0) b.empty++;
+  }
+  return {
+    bins: acc.map((b, i) => ({
+      label: DECLINE_RATE_BINS[i].label,
+      people: b.people,
+      avg: b.people ? b.necklaces / b.people : 0,
+      avgChances: b.people ? b.chances / b.people : 0,
+      emptyPct: pct(b.empty, b.people),
+    })),
+    noChance: { people: none.people, avg: none.people ? none.necklaces / none.people : 0 },
+  };
+}
+
+// Bar chart: average necklaces held by students, grouped by decline rate.
+export function createDeclineView({ svg, wrap, tooltip, note }) {
+  svg.setAttribute('viewBox', `0 0 ${VB_W} ${VB_H}`);
+  let bars = [];
+
+  svg.addEventListener('mousemove', (e) => {
+    const { x, y } = toViewBox(svg, VB_W, VB_H, e.clientX, e.clientY);
+    const hit = bars.find((b) => x >= b.x0 && x < b.x1 && y >= M.top && y <= BASE_Y);
+    if (!hit) { tooltip.hidden = true; return; }
+    placeTooltip(tooltip, wrap, e.clientX, e.clientY,
+      `<strong>Declined ${hit.label} of their chances</strong>`
+      + `<br>${fmtInt(hit.people)} student${hit.people === 1 ? '' : 's'}`
+      + `<br>Average necklaces: <strong>${hit.avg.toFixed(1)}</strong>`
+      + `<br><span class="muted">${hit.avgChances.toFixed(1)} chances to decline each, on average</span>`
+      + `<br><span class="muted">${fmtPct(hit.emptyPct)} of them hold none</span>`);
+  });
+  svg.addEventListener('mouseleave', () => { tooltip.hidden = true; });
+
+  return {
+    update(pop) {
+      const { bins, noChance } = declinePayoff(pop);
+      const ticks = niceTicks(Math.max(1, ...bins.map((b) => b.avg)), 4);
+      const y = linearScale([0, ticks[ticks.length - 1]], [BASE_Y, M.top]);
+      const slot = PW / bins.length;
+      const barW = Math.min(56, slot * 0.6);
+
+      svg.textContent = '';
+      drawYGrid(svgEl('g', { class: 'grid' }, svg), ticks, y, (t) => (Number.isInteger(t) ? fmtInt(t) : t.toFixed(1)));
+      const gBars = svgEl('g', {}, svg);
+      svgEl('line', { class: 'baseline', x1: M.left, x2: M.left + PW, y1: BASE_Y, y2: BASE_Y }, svg);
+      const gX = svgEl('g', { class: 'xtick' }, svg);
+      const gTotals = svgEl('g', { class: 'bar-total' }, svg);
+      bars = [];
+      bins.forEach((b, i) => {
+        const cx = M.left + slot * (i + 0.5);
+        if (b.people > 0) {
+          const h = Math.max(1.5, BASE_Y - y(b.avg));
+          svgEl('path', { class: 'bar student', d: barPath(cx - barW / 2, BASE_Y - h, barW, h, true) }, gBars);
+          svgEl('text', { x: cx, y: BASE_Y - h - 6, 'text-anchor': 'middle' }, gTotals).textContent = b.avg.toFixed(1);
+        }
+        svgEl('text', { x: cx, y: BASE_Y + 20, 'text-anchor': 'middle' }, gX).textContent = b.label;
+        bars.push({ x0: cx - slot / 2, x1: cx + slot / 2, ...b });
+      });
+      svgEl('text', { class: 'axis-title', x: M.left + PW / 2, y: VB_H - 8, 'text-anchor': 'middle' }, svg)
+        .textContent = 'Decline rate: share of their chances to decline that the student used';
+      if (note) {
+        const withChance = bins.reduce((a, b) => a + b.people, 0);
+        note.textContent = withChance === 0
+          ? 'No student has had a chance to decline yet. Pick a declining rule above to compare.'
+          : 'Bar height is the average necklaces held right now by the students in each group. '
+            + `Not shown: ${fmtInt(noChance.people)} students who never had a chance to decline `
+            + `(they hold ${noChance.avg.toFixed(1)} on average). Teachers always accept, so they aren’t shown.`;
+      }
+    },
+  };
+}
+
 // Line chart over time. All three series are percentages, so they share one 0–100% axis.
 export const TREND_SERIES = [
   { key: 'goldWithStudents', cls: 'gold', label: 'Gold necklaces held by students',
@@ -540,6 +669,8 @@ export const TREND_SERIES = [
     value: (h) => pct(h.staffBlue, h.blue) },
   { key: 'empty', cls: 'neutral', label: 'People with no necklaces',
     value: (h) => pct(h.empty, h.active + h.out) },
+  { key: 'declined', cls: 'student', label: 'Challenges declined this tick',
+    value: (h) => pct(h.declined || 0, (h.games || 0) + (h.declined || 0)) },
 ];
 
 export function createTrendView({ svg, wrap, tooltip }) {

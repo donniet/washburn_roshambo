@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   moveGlyph, matchSummary, classifyHolder, gridLayout, log2Edges, binLabel, histogram,
   linearScale, niceTicks, pct, fmtPct, fmtClock, personLabel, TREND_SERIES,
-  markRadius, sizeKeyValues, roleHistogram, colorHistogram, MARK_EMPTY, MARK_MIN, MARK_MAX,
+  markRadius, sizeKeyValues, roleHistogram, colorHistogram, declinePayoff, MARK_EMPTY, MARK_MIN, MARK_MAX,
 } from './game-view.js';
 import { MOVES, STAFF, STUDENT } from './game.js';
 
@@ -83,8 +83,8 @@ test('formatting helpers', () => {
 });
 
 test('trend series are percentages of the right totals', () => {
-  const h = { gold: 150, studentGold: 30, blue: 1600, staffBlue: 160, empty: 175, active: 1500, out: 250 };
-  assert.deepEqual(TREND_SERIES.map((s) => s.value(h)), [20, 10, 10]);
+  const h = { gold: 150, studentGold: 30, blue: 1600, staffBlue: 160, empty: 175, active: 1500, out: 250, games: 30, declined: 10 };
+  assert.deepEqual(TREND_SERIES.map((s) => s.value(h)), [20, 10, 10, 25]);
 });
 
 test('markRadius: log scale from 1 necklace to everything in play', () => {
@@ -145,4 +145,23 @@ test('colorHistogram: people per bin of each colour; people without a colour cou
   assert.deepEqual(h.gold, [1, 1, 0]);
   assert.equal(h.noBlue, 1);
   assert.equal(h.noGold, 2);
+});
+
+test('declinePayoff: students grouped by decline rate; no-chance students and teachers apart', () => {
+  const pop = {
+    size: 7,
+    role: Uint8Array.from([STUDENT, STUDENT, STUDENT, STUDENT, STUDENT, STUDENT, STAFF]),
+    blue: Int32Array.from([2, 0, 5, 1, 3, 4, 9]),
+    gold: Int32Array.from([0, 0, 1, 0, 0, 0, 0]),
+    declines: Int32Array.from([0, 1, 1, 3, 4, 0, 0]),
+    declineChances: Int32Array.from([4, 10, 2, 4, 4, 0, 0]),
+  };
+  // rates: 0, 0.1, 0.5, 0.75, 1, (no chance)
+  const { bins, noChance } = declinePayoff(pop);
+  assert.deepEqual(bins.map((b) => b.label), ['0%', '1–24%', '25–49%', '50–74%', '75–99%', '100%']);
+  assert.deepEqual(bins.map((b) => b.people), [1, 1, 0, 1, 1, 1]);
+  assert.deepEqual(bins.map((b) => b.avg), [2, 0, 0, 6, 1, 3]);
+  assert.deepEqual(bins.map((b) => b.avgChances), [4, 10, 0, 2, 4, 4]);
+  assert.deepEqual(bins.map((b) => b.emptyPct), [0, 100, 0, 0, 0, 0]);
+  assert.deepEqual(noChance, { people: 1, avg: 4 });
 });

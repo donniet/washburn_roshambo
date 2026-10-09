@@ -9,12 +9,15 @@ const RULE_SETS = [];
 for (const transfer of ['all', 'oneRandom', 'goldFirst', 'blueFirst'])
   for (const staffVsStudent of ['allowed', 'studentsMayChallengeStaff', 'never'])
     for (const zeroNecklaces of ['out', 'canChallenge'])
-      RULE_SETS.push({ transfer, staffVsStudent, zeroNecklaces, maxGamesPerPerson: 40 });
+      for (const declining of ['never', 'ifFewer'])
+        RULE_SETS.push({ transfer, staffVsStudent, zeroNecklaces, declining, maxGamesPerPerson: 40 });
+RULE_SETS.push({ transfer: 'oneRandom', staffVsStaff: 'never', declining: 'always', maxGamesPerPerson: 40 });
+RULE_SETS.push({ transfer: 'all', declining: 'ifMore', maxGamesPerPerson: 40 });
 
 test('registry: random strategy is built in', () => {
   const def = getStrategy('random');
   assert.equal(def.name, 'Pairs are randomly chosen');
-  assert.deepEqual(defaultParams(def), { participation: 1 });
+  assert.deepEqual(defaultParams(def), { participation: 1, declineRate: 0.5 });
   assert.throws(() => getStrategy('nope'));
 });
 
@@ -136,4 +139,67 @@ test('scheduler: maxGamesPerPerson bounds the number of ticks', () => {
   sim.run();
   assert.equal(sim.tick, 12);
   assert.equal(sim.step(), null, 'no steps after done');
+});
+
+test('scheduler: declines are counted, legal, and use slots without moving necklaces', () => {
+  const sim = createSimulation({
+    cfg: SMALL, rules: { declining: 'always', maxGamesPerPerson: 30 }, params: { declineRate: 0.5 }, seed: 8,
+  });
+  const before = totals(sim.state.pop);
+  let declined = 0, played = 0;
+  while (!sim.done) {
+    const { pop } = sim.state;
+    const evs = sim.step();
+    for (const e of evs) {
+      if (e.outcome === 'declined') {
+        declined++;
+        assert.equal(pop.role[e.target], STUDENT, 'only students decline');
+        assert.deepEqual(e.before, e.after, 'nothing moves on a decline');
+      } else played++;
+    }
+    const h = sim.history[sim.history.length - 1];
+    assert.equal(h.declined + h.games, evs.length);
+  }
+  assert.ok(declined > 0 && played > 0, `${declined} declined, ${played} played`);
+  const after = totals(sim.state.pop);
+  assert.equal(after.blue, before.blue);
+  assert.equal(after.gold, before.gold);
+  const { pop } = sim.state;
+  let slots = 0, games = 0, d = 0, da = 0;
+  for (let id = 0; id < pop.size; id++) {
+    slots += pop.slotsUsed[id]; games += pop.gamesPlayed[id]; d += pop.declines[id]; da += pop.declinedAgainst[id];
+  }
+  assert.equal(d, declined);
+  assert.equal(da, declined);
+  assert.equal(slots, 2 * (played + declined));
+  assert.equal(games, 2 * played);
+});
+
+test('scheduler: declineRate 0 never declines; teachers never decline', () => {
+  const none = createSimulation({ cfg: SMALL, rules: { declining: 'always', maxGamesPerPerson: 10 }, params: { declineRate: 0 }, seed: 9 }).run();
+  assert.equal(none.history.reduce((a, h) => a + h.declined, 0), 0);
+  const all = createSimulation({ cfg: SMALL, rules: { declining: 'always', maxGamesPerPerson: 10 }, params: { declineRate: 1 }, seed: 9 }).run();
+  const { pop } = all.state;
+  for (let id = 0; id < pop.size; id++) if (pop.role[id] === STAFF) assert.equal(pop.declines[id], 0);
+  // with everyone declining, only challenges against teachers get played
+  assert.ok(all.history.reduce((a, h) => a + h.declined, 0) > 0);
+});
+
+test('scheduler: strategy respond is only asked when declining is possible', () => {
+  let asked = 0;
+  registerStrategy({
+    id: 'test-respond',
+    name: 'Counts respond calls',
+    create: () => ({
+      selectPairs: () => [[0, 1], [2, 125]], // student→student, student→teacher
+      respond: (ctx, c, t) => { asked++; assert.ok(ctx.canDecline(c, t)); return 'decline'; },
+    }),
+  });
+  const sim = createSimulation({ cfg: SMALL, rules: { declining: 'always' }, strategyId: 'test-respond', seed: 10 });
+  const evs = sim.step();
+  assert.equal(asked, 1);
+  assert.deepEqual(evs.map((e) => e.outcome), ['declined', 'played']);
+  const off = createSimulation({ cfg: SMALL, rules: { declining: 'never' }, strategyId: 'test-respond', seed: 10 });
+  assert.deepEqual(off.step().map((e) => e.outcome), ['played', 'played']);
+  assert.equal(asked, 1);
 });

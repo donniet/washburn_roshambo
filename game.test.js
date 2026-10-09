@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createRng, MOVES, beats, playRound, playMatch, MAX_ROUNDS,
   DEFAULT_RULES, RULE_OPTIONS, STUDENT, STAFF, createPopulation, totals,
-  isActive, canChallenge, challengeError, transfer, createGameState, resolveChallenge,
+  isActive, canChallenge, challengeError, canDecline, declineError, transfer, createGameState, resolveChallenge,
 } from './game.js';
 
 // Small hand-built population for rule tests: ids 0,1 students; 2,3 staff.
@@ -12,7 +12,9 @@ function tinyPop({ blue = [1, 1, 0, 0], gold = [0, 0, 1, 1], games = [0, 0, 0, 0
     size: 4, numStudents: 2, numStaff: 2,
     role: Uint8Array.from([STUDENT, STUDENT, STAFF, STAFF]),
     blue: Int32Array.from(blue), gold: Int32Array.from(gold),
-    gamesPlayed: Int32Array.from(games), strategyId: new Uint8Array(4),
+    gamesPlayed: Int32Array.from(games), slotsUsed: Int32Array.from(games),
+    declines: new Int32Array(4), declinedAgainst: new Int32Array(4), declineChances: new Int32Array(4),
+    strategyId: new Uint8Array(4),
   };
 }
 const rules = (r = {}) => ({ ...DEFAULT_RULES, ...r });
@@ -201,6 +203,7 @@ test('engine: resolveChallenge plays, transfers and counts the game', () => {
   const state = createGameState({ cfg: { numStudents: 4, numStaff: 2 }, rules: { transfer: 'oneRandom' }, seed: 2 });
   const ev = resolveChallenge(state, 0, 4);
   assert.equal(ev.ok, true);
+  assert.equal(ev.outcome, 'played');
   assert.ok([0, 4].includes(ev.winner));
   assert.equal(ev.moved.blue + ev.moved.gold, 1);
   assert.equal(state.pop.gamesPlayed[0], 1);
@@ -227,4 +230,82 @@ test('engine: necklaces are conserved over 10,000 random challenges under every 
       for (let id = 0; id < 70; id++) assert.ok(state.pop.blue[id] >= 0 && state.pop.gold[id] >= 0);
     }
   }
+});
+
+test('eligibility: teachers vs teachers rule', () => {
+  const pop = tinyPop();
+  assert.ok(canChallenge(pop, 2, 3, rules({ staffVsStaff: 'allowed' })));
+  assert.ok(!canChallenge(pop, 2, 3, rules({ staffVsStaff: 'never' })));
+  assert.match(challengeError(pop, 2, 3, rules({ staffVsStaff: 'never' })), /each other/);
+  assert.ok(canChallenge(pop, 0, 1, rules({ staffVsStaff: 'never' })), 'students unaffected');
+  assert.ok(canChallenge(pop, 0, 2, rules({ staffVsStaff: 'never' })), 'student vs teacher unaffected');
+});
+
+test('declining: who may decline under each rule (points = total necklaces)', () => {
+  // 0: student with 1, 1: student with 3, 2: teacher with 1, 3: teacher with 5
+  const pop = tinyPop({ blue: [1, 2, 0, 0], gold: [0, 1, 1, 5] });
+  const may = (declining, c, t) => canDecline(pop, c, t, rules({ declining }));
+  for (const declining of ['never', 'ifFewer', 'ifMore', 'always']) {
+    assert.ok(!may(declining, 0, 2), `teachers always accept (${declining})`);
+    assert.ok(!may(declining, 0, 3), `teachers always accept (${declining})`);
+  }
+  assert.ok(!may('never', 1, 0));
+  assert.ok(may('always', 1, 0) && may('always', 0, 1) && may('always', 3, 0));
+  assert.ok(may('ifFewer', 1, 0), '1 < 3');
+  assert.ok(!may('ifFewer', 0, 1), '3 is not fewer than 1');
+  assert.ok(may('ifMore', 0, 1), '3 > 1');
+  assert.ok(!may('ifMore', 1, 0));
+  assert.ok(may('ifFewer', 3, 1), 'student with 3 vs teacher with 5');
+  // equal counts: neither fewer nor more
+  const tie = tinyPop({ blue: [2, 2, 0, 0] });
+  assert.ok(!canDecline(tie, 0, 1, rules({ declining: 'ifFewer' })));
+  assert.ok(!canDecline(tie, 0, 1, rules({ declining: 'ifMore' })));
+  assert.match(declineError(pop, 0, 2, rules({ declining: 'always' })), /Teachers/);
+});
+
+test('declining: a decline moves nothing and uses a time slot for both', () => {
+  const state = createGameState({ cfg: { numStudents: 4, numStaff: 2 }, rules: { declining: 'always' }, seed: 3 });
+  const { pop } = state;
+  const before = totals(pop);
+  const ev = resolveChallenge(state, 0, 1, { respond: () => 'decline' });
+  assert.equal(ev.ok, true);
+  assert.equal(ev.outcome, 'declined');
+  assert.equal(ev.winner, null);
+  assert.deepEqual(ev.rounds, []);
+  assert.deepEqual(ev.moved, { blue: 0, gold: 0 });
+  assert.deepEqual(totals(pop), before);
+  assert.deepEqual([pop.slotsUsed[0], pop.slotsUsed[1]], [1, 1]);
+  assert.deepEqual([pop.gamesPlayed[0], pop.gamesPlayed[1]], [0, 0]);
+  assert.equal(pop.declines[1], 1);
+  assert.equal(pop.declineChances[1], 1);
+  assert.equal(pop.declinedAgainst[0], 1);
+  // accepting a declinable challenge still counts as a chance
+  resolveChallenge(state, 2, 1, { respond: () => 'accept' });
+  assert.equal(pop.declineChances[1], 2);
+  assert.equal(pop.declines[1], 1);
+});
+
+test('declining: respond is ignored when the rules don’t allow a decline', () => {
+  let asked = 0;
+  const respond = () => { asked++; return 'decline'; };
+  const state = createGameState({ cfg: { numStudents: 4, numStaff: 2 }, rules: { declining: 'never' }, seed: 4 });
+  assert.equal(resolveChallenge(state, 0, 1, { respond }).outcome, 'played');
+  const s2 = createGameState({ cfg: { numStudents: 4, numStaff: 2 }, rules: { declining: 'always' }, seed: 4 });
+  assert.equal(resolveChallenge(s2, 0, 4, { respond }).outcome, 'played', 'teacher target');
+  assert.equal(asked, 0);
+  assert.equal(resolveChallenge(s2, 0, 1, { respond: () => 'accept' }).outcome, 'played');
+  assert.equal(state.pop.declineChances[1], 0, 'no chance when declining is off');
+  assert.equal(s2.pop.declineChances[4], 0, 'teachers never get a chance');
+  assert.equal(s2.pop.declineChances[1], 1);
+});
+
+test('declining: declines count toward the time-slot limit', () => {
+  const state = createGameState({ cfg: { numStudents: 3, numStaff: 0 }, rules: { declining: 'always', maxGamesPerPerson: 2 }, seed: 5 });
+  const respond = () => 'decline';
+  resolveChallenge(state, 0, 1, { respond });
+  resolveChallenge(state, 0, 2, { respond });
+  assert.ok(!isActive(state.pop, 0, state.rules));
+  const ev = resolveChallenge(state, 0, 1, { respond });
+  assert.equal(ev.ok, false);
+  assert.match(ev.reason, /time slots/);
 });

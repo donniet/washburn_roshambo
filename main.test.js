@@ -8,19 +8,22 @@ test('readConfig: empty form gives the defaults', () => {
   assert.deepEqual(c.cfg, DEFAULT_POPULATION);
   assert.deepEqual(c.rules, DEFAULT_RULES);
   assert.equal(c.strategyId, 'random');
-  assert.deepEqual(c.params, { participation: 1 });
+  assert.deepEqual(c.params, { participation: 1, declineRate: 0.5 });
   assert.equal(c.seed, 'washburn');
 });
 
 test('readConfig: reads form strings', () => {
   const c = readConfig({
     numStudents: '500', numStaff: '40', numBlue: '250', numGold: '40', maxGamesPerPerson: '60',
-    transfer: 'all', staffVsStudent: 'never', zeroNecklaces: 'canChallenge',
-    strategyId: 'random', 'param:participation': '0.5', seed: '1234',
+    transfer: 'all', staffVsStudent: 'never', staffVsStaff: 'never', zeroNecklaces: 'canChallenge', declining: 'ifFewer',
+    strategyId: 'random', 'param:participation': '0.5', 'param:declineRate': '0.25', seed: '1234',
   });
   assert.deepEqual(c.cfg, { numStudents: 500, numStaff: 40, numBlue: 250, numGold: 40 });
-  assert.deepEqual(c.rules, { transfer: 'all', staffVsStudent: 'never', zeroNecklaces: 'canChallenge', maxGamesPerPerson: 60 });
+  assert.deepEqual(c.rules, {
+    transfer: 'all', staffVsStudent: 'never', staffVsStaff: 'never', zeroNecklaces: 'canChallenge', declining: 'ifFewer', maxGamesPerPerson: 60,
+  });
   assert.equal(c.params.participation, 0.5);
+  assert.equal(c.params.declineRate, 0.25);
   assert.equal(c.seed, 1234);
 });
 
