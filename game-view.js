@@ -83,6 +83,56 @@ export function niceTicks(max, count = 5) {
   return ticks;
 }
 
+// A "nice" step (1, 2 or 5 × a power of ten) at least `raw`.
+export function niceStep(raw) {
+  if (!(raw > 0)) return 1;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 5, 10].map((m) => m * mag).find((st) => st >= raw * (1 - 1e-9));
+}
+
+// Y scale for bar charts, from pixel `bottom` (value 0) up to pixel `top`.
+// When the tallest bars dwarf the rest (a jump of at least `minRatio` between two
+// neighbouring bar heights), the axis is broken: the lower ~2/3 shows 0 … the small
+// bars, then a skipped band, then just the range around the tall bars. Returns
+//   { broken: false, y, ticks }
+//   { broken: true,  y, ticks, lowTop, highBottom, highTop, gapTop, gapBottom }
+// where gapTop/gapBottom are the pixel edges of the skipped band.
+export const BREAK_GAP = 22;
+export function axisScale(values, { top, bottom, minRatio = 4, count = 4 } = {}) {
+  const sorted = values.filter((v) => v > 0).sort((a, b) => b - a);
+  const plain = () => {
+    const ticks = niceTicks(Math.max(1, sorted[0] || 0), count);
+    return { broken: false, y: linearScale([0, ticks[ticks.length - 1]], [bottom, top]), ticks };
+  };
+  // Biggest jump between neighbouring bar heights.
+  let at = -1, best = 0;
+  for (let i = 0; i + 1 < sorted.length; i++) {
+    const r = sorted[i] / sorted[i + 1];
+    if (r > best) { best = r; at = i; }
+  }
+  if (at < 0 || best < minRatio) return plain();
+
+  const lowTicks = niceTicks(sorted[at + 1], 3);
+  const lowTop = lowTicks[lowTicks.length - 1];
+  const tallMin = sorted[at], tallMax = sorted[0];
+  const pad = Math.max((tallMax - tallMin) * 0.25, tallMax * 0.08);
+  const step = niceStep((tallMax - tallMin + 2 * pad) / 2);
+  const highBottom = Math.floor((tallMin - pad) / step) * step;
+  const highTop = Math.ceil(tallMax / step) * step;
+  if (highBottom <= lowTop) return plain();
+
+  const plotH = bottom - top;
+  const lowH = plotH * 0.66;
+  const gapBottom = bottom - lowH, gapTop = gapBottom - BREAK_GAP;
+  const lowY = linearScale([0, lowTop], [bottom, gapBottom]);
+  const highY = linearScale([highBottom, highTop], [gapTop, top]);
+  const y = (v) => (v <= lowTop ? lowY(v) : v >= highBottom ? highY(v) : (gapTop + gapBottom) / 2);
+  // Leave out the ticks right at the band's edges; the zig-zags mark those.
+  const ticks = lowTicks.length > 2 ? lowTicks.slice(0, -1) : [...lowTicks];
+  for (let v = highBottom + step; v <= highTop + step * 1e-9; v += step) ticks.push(+v.toPrecision(12));
+  return { broken: true, y, ticks, lowTop, highBottom, highTop, gapTop, gapBottom };
+}
+
 export const pct = (part, whole) => (whole > 0 ? (100 * part) / whole : 0);
 export const fmtPct = (v) => `${v.toFixed(v > 0 && v < 10 ? 1 : 0)}%`;
 export const fmtInt = (v) => Math.round(v).toLocaleString('en-US');
@@ -224,10 +274,10 @@ export function renderDecline(container, ev, { labels }) {
 const POP_W = 800, POP_MAX_H = 300;
 
 // Mark sizes, as a fraction of the grid cell. Holding 1 necklace gives the smallest
-// mark; holding every necklace in play gives the largest. MARK_MAX = 0.75 means a
-// maximal mark is 1.5 cells across, so two maximal neighbours overlap by half a
-// cell, which is 1/3 of a mark's width.
-export const MARK_EMPTY = 0.16, MARK_MIN = 0.3, MARK_MAX = 0.75;
+// mark (0.84 cells across, so single-necklace neighbours just don't touch); holding
+// every necklace in play gives the largest. MARK_MAX = 1 means a maximal mark is
+// 2 cells across, so two maximal neighbours overlap by one cell: half a mark's width.
+export const MARK_EMPTY = 0.2, MARK_MIN = 0.42, MARK_MAX = 1;
 
 // Radius (in the same units as `cell`) for someone holding `n` of `maxN` necklaces.
 // Log₂ scale: every doubling of necklaces adds the same amount of radius.
@@ -399,6 +449,25 @@ const PW = VB_W - M.left - M.right;
 const PH = VB_H - M.top - M.bottom;
 const BASE_Y = M.top + PH;
 
+// The skipped band of a broken axis: a surface-coloured strip with a zig-zag line
+// on each edge, drawn over the bars so tall bars look cut.
+function drawBreak(svg, scale) {
+  if (!scale.broken) return;
+  const x0 = M.left - 10, x1 = M.left + PW, amp = 3, period = 12;
+  const zig = (yMid) => {
+    const pts = [];
+    for (let x = x0, i = 0; x <= x1 + period / 2; x += period / 2, i++) pts.push([Math.min(x, x1), yMid + (i % 2 ? amp : -amp)]);
+    return pts;
+  };
+  const topEdge = zig(scale.gapTop + amp), bottomEdge = zig(scale.gapBottom - amp);
+  const g = svgEl('g', { class: 'axis-break' }, svg);
+  const band = [...topEdge, ...bottomEdge.slice().reverse()].map(([x, yy], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${yy.toFixed(1)}`).join('') + 'Z';
+  svgEl('path', { class: 'break-band', d: band }, g);
+  for (const edge of [topEdge, bottomEdge]) {
+    svgEl('path', { class: 'break-line', d: edge.map(([x, yy], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${yy.toFixed(1)}`).join('') }, g);
+  }
+}
+
 function drawYGrid(g, ticks, y, fmt) {
   for (const t of ticks) {
     const yy = y(t);
@@ -407,26 +476,17 @@ function drawYGrid(g, ticks, y, fmt) {
   }
 }
 
-// People per bin of total necklaces held, split by role. People holding nothing
-// are counted separately (they'd dwarf every other bar).
+// People per bin of total necklaces held (0, 1, 2, 3–4, 5–8 …), split by role.
 export function roleHistogram(pop) {
-  let max = 1, emptyStudents = 0, emptyStaff = 0;
+  let max = 0;
   const studentTotals = [], staffTotals = [];
   for (let id = 0; id < pop.size; id++) {
     const n = pop.blue[id] + pop.gold[id];
     if (n > max) max = n;
-    const staff = pop.role[id] === STAFF;
-    if (n === 0) { if (staff) emptyStaff++; else emptyStudents++; continue; }
-    (staff ? staffTotals : studentTotals).push(n);
+    (pop.role[id] === STAFF ? staffTotals : studentTotals).push(n);
   }
-  const edges = log2Edges(max);
-  return {
-    edges,
-    students: histogram(studentTotals, edges),
-    staff: histogram(staffTotals, edges),
-    emptyStudents,
-    emptyStaff,
-  };
+  const edges = [0, ...log2Edges(max)];
+  return { edges, students: histogram(studentTotals, edges), staff: histogram(staffTotals, edges) };
 }
 
 // Bar path: square bottom, 4px rounded top when `roundTop`.
@@ -437,7 +497,7 @@ function barPath(x, yTop, w, h, roundTop) {
 
 const STACK_GAP = 2; // surface gap between stacked segments
 
-// Stacked histogram: how many people hold 1, 2, 3–4, 5–8 … necklaces in total,
+// Stacked histogram: how many people hold 0, 1, 2, 3–4, 5–8 … necklaces in total,
 // students on the bottom and teachers stacked on top.
 export function createHistogramView({ svg, wrap, tooltip, note }) {
   svg.setAttribute('viewBox', `0 0 ${VB_W} ${VB_H}`);
@@ -457,16 +517,16 @@ export function createHistogramView({ svg, wrap, tooltip, note }) {
 
   return {
     update(pop) {
-      const { edges, students, staff, emptyStudents, emptyStaff } = roleHistogram(pop);
+      const { edges, students, staff } = roleHistogram(pop);
       const nb = edges.length - 1;
       const totals = students.map((v, i) => v + staff[i]);
-      const ticks = niceTicks(Math.max(1, ...totals), 4);
-      const y = linearScale([0, ticks[ticks.length - 1]], [BASE_Y, M.top]);
+      const scale = axisScale(totals, { top: M.top, bottom: BASE_Y });
+      const { y } = scale;
       const slot = PW / nb;
       const barW = Math.min(56, slot * 0.6);
 
       svg.textContent = '';
-      drawYGrid(svgEl('g', { class: 'grid' }, svg), ticks, y, fmtInt);
+      drawYGrid(svgEl('g', { class: 'grid' }, svg), scale.ticks, y, fmtInt);
       const gBars = svgEl('g', {}, svg);
       svgEl('line', { class: 'baseline', x1: M.left, x2: M.left + PW, y1: BASE_Y, y2: BASE_Y }, svg);
       const gX = svgEl('g', { class: 'xtick' }, svg);
@@ -476,15 +536,20 @@ export function createHistogramView({ svg, wrap, tooltip, note }) {
         const cx = M.left + slot * (i + 0.5);
         const x = cx - barW / 2;
         const label = binLabel(edges[i], edges[i + 1]);
-        const hS = students[i] > 0 ? Math.max(1.5, BASE_Y - y(students[i])) : 0;
-        const hT = staff[i] > 0 ? Math.max(1.5, BASE_Y - y(staff[i])) : 0;
-        if (hS) svgEl('path', { class: 'bar student', d: barPath(x, BASE_Y - hS, barW, hS, !hT) }, gBars);
-        if (hT) {
-          const base = hS ? BASE_Y - hS - STACK_GAP : BASE_Y;
-          svgEl('path', { class: 'bar staff', d: barPath(x, base - hT, barW, hT, true) }, gBars);
+        // Segment edges come from cumulative values, so stacking stays right on a broken axis.
+        let top = BASE_Y;
+        if (students[i] > 0) {
+          const yS = Math.min(BASE_Y - 1.5, y(students[i]));
+          svgEl('path', { class: 'bar student', d: barPath(x, yS, barW, BASE_Y - yS, staff[i] === 0) }, gBars);
+          top = yS;
+        }
+        if (staff[i] > 0) {
+          const bottom = students[i] > 0 ? top - STACK_GAP : BASE_Y;
+          const yT = Math.min(bottom - 1.5, y(totals[i]));
+          svgEl('path', { class: 'bar staff', d: barPath(x, yT, barW, bottom - yT, true) }, gBars);
+          top = yT;
         }
         if (totals[i] > 0) {
-          const top = BASE_Y - hS - hT - (hS && hT ? STACK_GAP : 0);
           svgEl('text', { x: cx, y: top - 6, 'text-anchor': 'middle' }, gTotals).textContent = fmtInt(totals[i]);
         }
         svgEl('text', { x: cx, y: BASE_Y + 20, 'text-anchor': 'middle' }, gX).textContent = label;
@@ -492,9 +557,11 @@ export function createHistogramView({ svg, wrap, tooltip, note }) {
       }
       svgEl('text', { class: 'axis-title', x: M.left + PW / 2, y: VB_H - 8, 'text-anchor': 'middle' }, svg)
         .textContent = 'Necklaces held by one person (blue + gold)';
-      if (note) note.textContent = `Not shown: ${fmtInt(emptyStudents + emptyStaff)} people hold no necklaces `
-        + `(${fmtInt(emptyStudents)} students, ${fmtInt(emptyStaff)} teachers). `
-        + 'Bins double in width so a few big winners don’t squash everyone else.';
+      drawBreak(svg, scale);
+      svg.appendChild(gTotals);
+      if (note) note.textContent = 'Bins double in width so a few big winners don’t squash everyone else. '
+        + 'The 0 bar is everyone holding no necklaces. When it towers over the rest, the zig-zag break skips part of the '
+        + 'axis so the small bars stay readable; go by the numbers above the bars.';
     },
   };
 }
@@ -532,17 +599,18 @@ export function createColorHistogramView({ svg, wrap, tooltip, note }) {
   return {
     update(pop) {
       const { edges, blue, gold, noBlue, noGold } = colorHistogram(pop);
-      const ticks = niceTicks(Math.max(1, ...blue, ...gold), 4);
-      const y = linearScale([0, ticks[ticks.length - 1]], [BASE_Y, M.top]);
+      const scale = axisScale([...blue, ...gold], { top: M.top, bottom: BASE_Y });
+      const { y } = scale;
       const nb = edges.length - 1;
       const slot = PW / nb;
       const barW = Math.min(36, (slot - 12) / 2);
 
       svg.textContent = '';
-      drawYGrid(svgEl('g', { class: 'grid' }, svg), ticks, y, fmtInt);
+      drawYGrid(svgEl('g', { class: 'grid' }, svg), scale.ticks, y, fmtInt);
       const gBars = svgEl('g', {}, svg);
       svgEl('line', { class: 'baseline', x1: M.left, x2: M.left + PW, y1: BASE_Y, y2: BASE_Y }, svg);
       const gX = svgEl('g', { class: 'xtick' }, svg);
+      const gTotals = svgEl('g', { class: 'bar-total small' }, svg);
       bars = [];
       for (let i = 0; i < nb; i++) {
         const cx = M.left + slot * (i + 0.5);
@@ -552,12 +620,15 @@ export function createColorHistogramView({ svg, wrap, tooltip, note }) {
           if (v <= 0) return;
           const h = Math.max(1.5, BASE_Y - y(v));
           svgEl('path', { class: `bar ${cls}`, d: barPath(x, BASE_Y - h, barW, h, true) }, gBars);
+          svgEl('text', { x: x + barW / 2, y: BASE_Y - h - 5, 'text-anchor': 'middle' }, gTotals).textContent = fmtInt(v);
         });
         svgEl('text', { x: cx, y: BASE_Y + 20, 'text-anchor': 'middle' }, gX).textContent = label;
         bars.push({ x0: cx - slot / 2, x1: cx + slot / 2, label, blue: blue[i], gold: gold[i] });
       }
       svgEl('text', { class: 'axis-title', x: M.left + PW / 2, y: VB_H - 8, 'text-anchor': 'middle' }, svg)
         .textContent = 'Necklaces of one colour held by one person';
+      drawBreak(svg, scale);
+      svg.appendChild(gTotals);
       if (note) note.textContent = `Not shown: ${fmtInt(noBlue)} people hold no blue necklaces and ${fmtInt(noGold)} hold no gold. `
         + 'Someone holding both colours is counted once in blue and once in gold.';
     },
@@ -625,13 +696,13 @@ export function createDeclineView({ svg, wrap, tooltip, note }) {
   return {
     update(pop) {
       const { bins, noChance } = declinePayoff(pop);
-      const ticks = niceTicks(Math.max(1, ...bins.map((b) => b.avg)), 4);
-      const y = linearScale([0, ticks[ticks.length - 1]], [BASE_Y, M.top]);
+      const scale = axisScale(bins.map((b) => b.avg), { top: M.top, bottom: BASE_Y });
+      const { y } = scale;
       const slot = PW / bins.length;
       const barW = Math.min(56, slot * 0.6);
 
       svg.textContent = '';
-      drawYGrid(svgEl('g', { class: 'grid' }, svg), ticks, y, (t) => (Number.isInteger(t) ? fmtInt(t) : t.toFixed(1)));
+      drawYGrid(svgEl('g', { class: 'grid' }, svg), scale.ticks, y, (t) => (Number.isInteger(t) ? fmtInt(t) : t.toFixed(1)));
       const gBars = svgEl('g', {}, svg);
       svgEl('line', { class: 'baseline', x1: M.left, x2: M.left + PW, y1: BASE_Y, y2: BASE_Y }, svg);
       const gX = svgEl('g', { class: 'xtick' }, svg);
@@ -649,6 +720,8 @@ export function createDeclineView({ svg, wrap, tooltip, note }) {
       });
       svgEl('text', { class: 'axis-title', x: M.left + PW / 2, y: VB_H - 8, 'text-anchor': 'middle' }, svg)
         .textContent = 'Decline rate: share of their chances to decline that the student used';
+      drawBreak(svg, scale);
+      svg.appendChild(gTotals);
       if (note) {
         const withChance = bins.reduce((a, b) => a + b.people, 0);
         note.textContent = withChance === 0

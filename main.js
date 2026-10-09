@@ -64,6 +64,21 @@ export function readConfig(values = {}) {
   return { cfg, rules, strategyId, params, seed };
 }
 
+// Plain-language reason a finished run stopped.
+export function endMessage(sim) {
+  const end = sim.endReason;
+  if (!end || end.reason === 'time') return `Finished: everyone used their ${fmtInt(sim.maxTicks)} time slots.`;
+  const { pop, rules } = sim.state;
+  const keepPlaying = rules.zeroNecklaces === 'out'
+    ? ' To keep everyone playing, set “People with zero necklaces” to “CAN still challenge”.' : '';
+  if (end.reason === 'oneHolder') {
+    return `Finished early at tick ${fmtInt(sim.tick)}: ${personLabel(pop, end.holder)} holds all ${fmtInt(end.total)} necklaces`
+      + `${rules.zeroNecklaces === 'out' ? ' and everyone else is out' : ''}.${keepPlaying}`;
+  }
+  return `Finished early at tick ${fmtInt(sim.tick)}: ${fmtInt(end.holders)} people still hold necklaces, `
+    + `but the rules don’t let anyone still playing challenge them.${keepPlaying}`;
+}
+
 // ---------- page ----------
 
 function init() {
@@ -182,9 +197,7 @@ function init() {
     $('stat-declined').textContent = fmtInt(totalDeclined);
     $('stat-declined-sub').textContent = rules.declining === 'never'
       ? 'declining is off' : `${fmtInt(h.declined || 0)} in the last tick`;
-    if (sim.done && sim.tick > 0) $('status').textContent = sim.tick >= sim.maxTicks
-      ? `Finished: everyone used their ${fmtInt(sim.maxTicks)} time slots.`
-      : `Finished early at tick ${fmtInt(sim.tick)}: no legal challenges remain.`;
+    if (sim.done && sim.tick > 0) $('status').textContent = endMessage(sim);
     $('play').textContent = playing ? '❚❚ Pause' : sim.done ? '✓ Finished' : '▶ Run';
     $('play').disabled = $('step').disabled = $('to-end').disabled = sim.done;
     $('replay').disabled = sim.lastEvents.length === 0;

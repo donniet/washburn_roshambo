@@ -214,6 +214,7 @@ export function createSimulation({ cfg = {}, rules = {}, strategyId = DEFAULT_ST
   const history = [summarize(state, 0, [], 0)];
   let tick = 0;
   let done = maxTicks <= 0;
+  let endReason = done ? endInfo('time') : null;
   let lastEvents = [];
 
   const respond = strategy.respond ? (a, b) => strategy.respond(ctx, a, b) : undefined;
@@ -247,8 +248,22 @@ export function createSimulation({ cfg = {}, rules = {}, strategyId = DEFAULT_ST
     }
     lastEvents = events;
     history.push(summarize(state, tick, events, rejected));
-    if (tick >= maxTicks || (events.length === 0 && !anyChallengePossible(ctx))) done = true;
+    if (tick >= maxTicks) { done = true; endReason = endInfo('time'); }
+    else if (events.length === 0 && !anyChallengePossible(ctx)) { done = true; endReason = endInfo('stuck'); }
     return events;
+  }
+
+  function endInfo(kind) {
+    if (kind === 'time') return { reason: 'time' };
+    const holders = [];
+    let total = 0;
+    for (let id = 0; id < pop.size; id++) {
+      const n = necklaceCount(pop, id);
+      if (n > 0) { holders.push(id); total += n; }
+    }
+    return holders.length === 1
+      ? { reason: 'oneHolder', holder: holders[0], total }
+      : { reason: 'stuck', holders: holders.length };
   }
 
   function run(n = Infinity) {
@@ -260,6 +275,11 @@ export function createSimulation({ cfg = {}, rules = {}, strategyId = DEFAULT_ST
     state, history, strategy: def, maxTicks,
     get tick() { return tick; },
     get done() { return done; },
+    // Why the run ended (null while running):
+    //   { reason: 'time' }                      — the time slots ran out
+    //   { reason: 'oneHolder', holder, total }  — one person holds every necklace
+    //   { reason: 'stuck', holders }            — necklaces are spread out, but no legal challenge is left
+    get endReason() { return endReason; },
     get lastEvents() { return lastEvents; },
     step, run,
   };

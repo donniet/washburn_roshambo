@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   moveGlyph, matchSummary, classifyHolder, gridLayout, log2Edges, binLabel, histogram,
   linearScale, niceTicks, pct, fmtPct, fmtClock, personLabel, TREND_SERIES,
-  markRadius, sizeKeyValues, roleHistogram, colorHistogram, declinePayoff, MARK_EMPTY, MARK_MIN, MARK_MAX,
+  markRadius, sizeKeyValues, roleHistogram, colorHistogram, declinePayoff, axisScale, niceStep, BREAK_GAP, MARK_EMPTY, MARK_MIN, MARK_MAX,
 } from './game-view.js';
 import { MOVES, STAFF, STUDENT } from './game.js';
 
@@ -103,11 +103,12 @@ test('markRadius: log scale from 1 necklace to everything in play', () => {
   assert.equal(markRadius(1, 1, cell), MARK_MIN * cell, 'single necklace in play');
 });
 
-test('markRadius: two maximal neighbours overlap by at most 1/3 of a mark', () => {
+test('markRadius: two maximal neighbours overlap by at most half a mark', () => {
   const cell = 11;
   const d = 2 * markRadius(100, 100, cell);
   const overlap = d - cell; // centres are one cell apart
-  assert.ok(overlap <= d / 3 + 1e-9, `overlap ${overlap} of ${d}`);
+  assert.ok(overlap <= d / 2 + 1e-9, `overlap ${overlap} of ${d}`);
+  assert.ok(2 * markRadius(1, 100, cell) < cell, 'single-necklace marks don’t touch');
 });
 
 test('sizeKeyValues: powers of ten then the max', () => {
@@ -116,7 +117,7 @@ test('sizeKeyValues: powers of ten then the max', () => {
   assert.deepEqual(sizeKeyValues(1), [1]);
 });
 
-test('roleHistogram: people per total-necklace bin, split by role; empties counted apart', () => {
+test('roleHistogram: people per total-necklace bin, including 0, split by role', () => {
   // ids 0–3 students, 4–5 teachers
   const pop = {
     size: 6,
@@ -126,11 +127,13 @@ test('roleHistogram: people per total-necklace bin, split by role; empties count
   };
   // totals: students 0, 1, 3, 4 · teachers 0, 5
   const h = roleHistogram(pop);
-  assert.deepEqual(h.edges, [1, 2, 3, 5, 9]);
-  assert.deepEqual(h.students, [1, 0, 2, 0]);
-  assert.deepEqual(h.staff, [0, 0, 0, 1]);
-  assert.equal(h.emptyStudents, 1);
-  assert.equal(h.emptyStaff, 1);
+  assert.deepEqual(h.edges, [0, 1, 2, 3, 5, 9]);
+  assert.deepEqual(h.students, [1, 1, 0, 2, 0]);
+  assert.deepEqual(h.staff, [1, 0, 0, 0, 1]);
+  const empty = roleHistogram({ size: 2, role: Uint8Array.from([0, 1]), blue: new Int32Array(2), gold: new Int32Array(2) });
+  assert.deepEqual(empty.edges, [0, 1, 2]);
+  assert.deepEqual(empty.students, [1, 0]);
+  assert.deepEqual(empty.staff, [1, 0]);
 });
 
 test('colorHistogram: people per bin of each colour; people without a colour counted apart', () => {
@@ -164,4 +167,51 @@ test('declinePayoff: students grouped by decline rate; no-chance students and te
   assert.deepEqual(bins.map((b) => b.avgChances), [4, 10, 0, 2, 4, 4]);
   assert.deepEqual(bins.map((b) => b.emptyPct), [0, 100, 0, 0, 0, 0]);
   assert.deepEqual(noChance, { people: 1, avg: 4 });
+});
+
+test('niceStep rounds up to 1, 2 or 5 × a power of ten', () => {
+  assert.equal(niceStep(3), 5);
+  assert.equal(niceStep(20), 20);
+  assert.equal(niceStep(130), 200);
+  assert.equal(niceStep(0.3), 0.5);
+  assert.equal(niceStep(0), 1);
+});
+
+test('axisScale: no break when bars are comparable', () => {
+  const s = axisScale([862, 400, 700, 250], { top: 24, bottom: 304 });
+  assert.equal(s.broken, false);
+  assert.equal(s.y(0), 304);
+  assert.equal(s.ticks[s.ticks.length - 1] >= 862, true);
+  assert.equal(axisScale([862, 26, 862], { top: 24, bottom: 304 }).broken, true, '33× jump breaks');
+  assert.equal(axisScale([], { top: 24, bottom: 304 }).broken, false);
+  assert.equal(axisScale([5], { top: 24, bottom: 304 }).broken, false);
+});
+
+test('axisScale: breaks when one bar dwarfs the rest', () => {
+  const top = 24, bottom = 304;
+  const s = axisScale([1662, 0, 2, 2, 10, 23, 41, 10], { top, bottom });
+  assert.equal(s.broken, true);
+  assert.ok(s.lowTop >= 41 && s.lowTop < 100, `lowTop ${s.lowTop}`);
+  assert.ok(s.highBottom > s.lowTop && s.highBottom < 1662);
+  assert.ok(s.highTop >= 1662);
+  assert.equal(s.gapBottom - s.gapTop, BREAK_GAP);
+  // monotonic, and every bar lands outside the skipped band
+  let prev = Infinity;
+  for (let v = 0; v <= s.highTop; v += 7) { const yy = s.y(v); assert.ok(yy <= prev + 1e-9); prev = yy; }
+  for (const v of [0, 2, 10, 23, 41, 1662]) {
+    const yy = s.y(v);
+    assert.ok(yy >= s.gapBottom || yy <= s.gapTop, `${v} → ${yy}`);
+    assert.ok(yy >= top && yy <= bottom);
+  }
+  assert.equal(s.y(0), bottom);
+  // ticks on both sides of the break, none inside it
+  assert.ok(s.ticks.some((t) => t <= s.lowTop) && s.ticks.some((t) => t >= s.highBottom));
+  assert.ok(s.ticks.every((t) => t <= s.lowTop || t >= s.highBottom));
+});
+
+test('axisScale: several tall bars share the upper section', () => {
+  const s = axisScale([900, 1500, 30, 12], { top: 24, bottom: 304 });
+  assert.equal(s.broken, true);
+  assert.ok(s.highBottom < 900 && s.highTop >= 1500);
+  assert.ok(s.y(1500) < s.y(900));
 });

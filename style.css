@@ -449,6 +449,9 @@ fieldset.rule legend {
 .chart .trend-end.blue { fill: var(--necklace-blue); }
 .chart .trend-end.gold { fill: var(--necklace-gold); }
 .chart .trend-end.neutral { fill: var(--text-muted); }
+.chart .bar-total.small text { font-size: 11px; }
+.chart .break-band { fill: var(--surface-1); }
+.chart .break-line { fill: none; stroke: var(--axis); stroke-width: 1.5; stroke-linejoin: round; }
 .chart .crosshair { stroke: var(--axis); stroke-width: 1; }
 
 .explain + .explain { margin-top: 8px; }

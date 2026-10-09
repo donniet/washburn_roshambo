@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readConfig } from './main.js';
+import { readConfig, endMessage } from './main.js';
+import { createSimulation } from './strategies.js';
 import { DEFAULT_RULES, DEFAULT_POPULATION } from './game.js';
 
 test('readConfig: empty form gives the defaults', () => {
@@ -54,4 +55,14 @@ test('readConfig: classroom strategy options', () => {
   const bad = readConfig({ strategyId: 'classroom', 'param:challengeBy': 'sneaky', 'param:groupSize': '0' });
   assert.equal(bad.params.challengeBy, 'random');
   assert.equal(bad.params.groupSize, 1);
+});
+
+test('endMessage explains why a run finished', () => {
+  const cfg = { numStudents: 60, numStaff: 5, numBlue: 60, numGold: 5 };
+  const one = createSimulation({ cfg, rules: { transfer: 'all', zeroNecklaces: 'out', maxGamesPerPerson: 5000 }, seed: 1 }).run();
+  const msg = endMessage(one);
+  assert.match(msg, /holds all 65 necklaces and everyone else is out/);
+  assert.match(msg, /CAN still challenge/);
+  const time = createSimulation({ cfg, rules: { maxGamesPerPerson: 3 }, seed: 1 }).run();
+  assert.equal(endMessage(time), 'Finished: everyone used their 3 time slots.');
 });

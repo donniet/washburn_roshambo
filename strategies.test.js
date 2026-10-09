@@ -316,3 +316,27 @@ test('classroom: declines follow the decline option during a run', () => {
     }
   }
 });
+
+test('scheduler: endReason says why a run stopped', () => {
+  const time = createSimulation({ cfg: SMALL, rules: { maxGamesPerPerson: 5 }, seed: 14 }).run();
+  assert.deepEqual(time.endReason, { reason: 'time' });
+  const one = createSimulation({ cfg: SMALL, rules: { transfer: 'all', zeroNecklaces: 'out', maxGamesPerPerson: 5000 }, seed: 15 }).run();
+  assert.equal(one.endReason.reason, 'oneHolder');
+  assert.equal(one.endReason.total, 140);
+  assert.equal(necklaceCount(one.state.pop, one.endReason.holder), 140);
+  // only teachers hold necklaces and they may not play each other or students
+  const stuck = createSimulation({
+    cfg: { numStudents: 10, numStaff: 3, numBlue: 0, numGold: 3 },
+    rules: { staffVsStudent: 'never', staffVsStaff: 'never', maxGamesPerPerson: 50 }, seed: 16,
+  }).run();
+  assert.equal(stuck.tick, 1);
+  assert.deepEqual(stuck.endReason, { reason: 'stuck', holders: 3 });
+  const running = createSimulation({ cfg: SMALL, seed: 17 });
+  assert.equal(running.endReason, null);
+});
+
+test('scheduler: with zero-necklace players allowed, winner-takes-all runs to the time limit', () => {
+  const sim = createSimulation({ cfg: SMALL, rules: { transfer: 'all', zeroNecklaces: 'canChallenge', declining: 'ifFewer', maxGamesPerPerson: 200 }, seed: 18 }).run();
+  assert.equal(sim.tick, 200);
+  assert.deepEqual(sim.endReason, { reason: 'time' });
+});

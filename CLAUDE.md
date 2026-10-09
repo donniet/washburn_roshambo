@@ -48,7 +48,14 @@ Dependencies go one way: `main.js` → `game-view.js` / `strategies.js` → `gam
   - `declineError`/`canDecline` decide whether a decline is allowed.
   - `resolveChallenge(state, c, t, { respond })` returns one of three results: `ok: false` (not allowed), `outcome: 'declined'` or `outcome: 'played'`.
   - `respond` is only consulted when a decline is allowed.
-- **Time:** one tick is one 5 s slot, and a person plays or declines at most once per tick. A run ends at `maxGamesPerPerson` ticks, or earlier when no legal challenge remains.
+- **Time:** one tick is one 5 s slot, and a person plays or declines at most once per tick.
+- **End of a run:** `sim.endReason` is one of:
+  - `{ reason: 'time' }`;
+  - `{ reason: 'oneHolder', holder, total }`;
+  - `{ reason: 'stuck', holders }`, meaning necklaces are spread out but no legal challenge is left.
+
+  `endMessage(sim)` in `main.js` turns it into the status text. Under "zero necklaces OUT" it also suggests "CAN still challenge".
+  - With "winner takes all" + "OUT", one person ends up with everything within tens of ticks. Stopping then is correct, not a bug (confirmed with the user's report). A run ends at `maxGamesPerPerson` ticks, or earlier when no legal challenge remains.
 
 ## Strategies (expected to grow)
 - Add one `registerStrategy({ id, name, description, params, create })` block in `strategies.js`.
@@ -84,7 +91,7 @@ This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualize
 - Population grid: one mark per person (circle = student, square = teacher).
   - Blue is a disk and gold is a ring drawn on top; gold-only holders get a solid gold mark.
   - Each colour is sized by its own count on one shared log₂ scale (`markRadius`). The scale runs from `MARK_MIN` (1 necklace) to `MARK_MAX` (every necklace in play).
-  - `MARK_MAX = 0.75` cell caps neighbour overlap at ⅓ of a mark's width.
+  - Sizes (fraction of a cell): `MARK_EMPTY = 0.2`, `MARK_MIN = 0.42` (single-necklace marks don't touch), `MARK_MAX = 1`. The maximum lets neighbours overlap by up to half a mark's width (the user raised this from ⅓).
   - Bigger marks are re-appended so they draw on top.
   - An earlier version split one mark by area. Don't go back to it: small gold holdings disappeared under large blue ones.
 - Hand emoji are grayscale with their finger detail kept. `.glyph { filter: var(--hand-filter) }` uses a per-theme token:
@@ -92,9 +99,9 @@ This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualize
   - dark: `grayscale(1) brightness(1.1) contrast(1.2)` (light grey).
   - The glyph sits in an inner span (`handEl`) because a filter on `.hand` would also grey out the blue win highlight.
   - Rejected: text-shadow silhouette (loses detail) and U+FE0E (inconsistent).
-- Histogram ("by role"): stacked bars. X = total necklaces per person in doubling bins; y = people; students on the bottom, teachers on top.
+- Histogram ("by role"): stacked bars. X = total necklaces per person (0, then doubling bins 1, 2, 3–4 …); y = people; students on the bottom, teachers on top.
   - Segments have a 2px surface gap, and totals are labelled above each bar.
-  - People holding zero necklaces are listed in the note, not drawn.
+  - Includes a 0 bin (people holding nothing), which the user asked for; it dominates late in a run, so bar totals are labelled.
   - Helper: `roleHistogram(pop)`.
 - Histogram ("by colour"), the card after it: grouped blue/gold bars side by side.
   - X = necklaces of one colour per person; y = people.
@@ -108,6 +115,12 @@ This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualize
   - Grouping by an assigned per-student tendency (from a strategy) would avoid this.
 - "Over time" also plots the % of each tick's challenges that were declined (aqua line).
 - The "Challenges declined" stat tile replaced "Blue / gold in play"; that total now sits in the "Most held" tile's sub-line.
+- Broken y-axis (user request) on all three bar charts, via `axisScale(values, { top, bottom, minRatio = 4 })` + `drawBreak`:
+  - When the biggest jump between neighbouring bar heights is ≥4×, the lower 66% of the plot shows 0…the small bars, a 22px band with two zig-zag lines skips the middle, and the top shows only the range around the tall bars.
+  - The edge ticks next to the band are omitted.
+  - If no clean split exists, the axis falls back to a plain, unbroken scale.
+  - Stacked segments must use cumulative values with `y()` (never scale segment heights separately), or they distort across the break.
+  - Every bar carries its value label, because heights aren't comparable across the break.
 - Charts: SVG with a fixed `viewBox` (800 wide, margins `{24,16,56,52}`), coloured only through CSS classes. Text uses text tokens, never series colours.
 
 ## Deployment
