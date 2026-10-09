@@ -1,0 +1,390 @@
+// Washburn Roshambo — views.
+// Three views: a single Roshambo match, the whole population, and the simulation charts.
+// Pure helpers are exported (and tested); DOM code only runs when a view is created.
+
+import { STAFF } from './game.js';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// ---------- pure helpers ----------
+
+export const MOVE_GLYPHS = { rock: '✊', paper: '✋', scissors: '✌️' };
+export const moveGlyph = (move) => MOVE_GLYPHS[move] ?? '?';
+
+// Running score after each round: [{ a, b, result, scoreA, scoreB }]
+export function matchSummary(rounds) {
+  let scoreA = 0, scoreB = 0;
+  return rounds.map((r) => {
+    if (r.result > 0) scoreA++;
+    else if (r.result < 0) scoreB++;
+    return { ...r, scoreA, scoreB };
+  });
+}
+
+export function classifyHolder(blue, gold) {
+  if (blue > 0 && gold > 0) return 'both';
+  if (gold > 0) return 'gold';
+  if (blue > 0) return 'blue';
+  return 'none';
+}
+
+// Largest square cell (≤ maxCell) that fits n cells in width × maxHeight.
+export function gridLayout(n, width, maxHeight, maxCell = 24) {
+  for (let cell = maxCell; cell > 1; cell--) {
+    const cols = Math.floor(width / cell);
+    const rows = Math.ceil(n / cols);
+    if (rows * cell <= maxHeight) return { cols, rows, cell, height: rows * cell };
+  }
+  const cols = Math.floor(width);
+  return { cols, rows: Math.ceil(n / cols), cell: 1, height: Math.ceil(n / cols) };
+}
+
+// Doubling bin edges starting at 1: [1, 2, 3, 5, 9, 17, …] — bins are [edge[i], edge[i+1]).
+// The last edge is always > max, so every value 1…max lands in a bin.
+export function log2Edges(max) {
+  const edges = [1, 2];
+  while (edges[edges.length - 1] <= max) {
+    const last = edges[edges.length - 1];
+    edges.push(last + (last - edges[edges.length - 2]) * (edges.length > 2 ? 2 : 1));
+  }
+  return edges;
+}
+
+export function binLabel(lo, hiExclusive) {
+  return hiExclusive - lo === 1 ? String(lo) : `${lo}–${hiExclusive - 1}`;
+}
+
+// Count values into bins defined by ascending edges. Values outside [edges[0], last) are ignored.
+export function histogram(values, edges) {
+  const counts = new Array(edges.length - 1).fill(0);
+  for (const v of values) {
+    if (v < edges[0] || v >= edges[edges.length - 1]) continue;
+    let i = 0;
+    while (v >= edges[i + 1]) i++;
+    counts[i]++;
+  }
+  return counts;
+}
+
+export function linearScale([d0, d1], [r0, r1]) {
+  const span = d1 - d0 || 1;
+  return (v) => r0 + ((v - d0) / span) * (r1 - r0);
+}
+
+// "Nice" tick values from 0 up to at least max, about `count` of them.
+export function niceTicks(max, count = 5) {
+  if (!(max > 0)) return [0, 1];
+  const raw = max / count;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw);
+  const ticks = [];
+  for (let v = 0; v < max + step * 0.5; v += step) ticks.push(+v.toPrecision(12));
+  if (ticks[ticks.length - 1] < max) ticks.push(+(ticks[ticks.length - 1] + step).toPrecision(12));
+  return ticks;
+}
+
+export const pct = (part, whole) => (whole > 0 ? (100 * part) / whole : 0);
+export const fmtPct = (v) => `${v.toFixed(v > 0 && v < 10 ? 1 : 0)}%`;
+export const fmtInt = (v) => Math.round(v).toLocaleString('en-US');
+
+export function personLabel(pop, id) {
+  return `#${id} ${pop.role[id] === STAFF ? 'Teacher' : 'Student'}`;
+}
+
+// ---------- DOM helpers ----------
+
+const svgEl = (tag, attrs = {}, parent) => {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+
+const htmlEl = (tag, attrs = {}, text) => {
+  const e = document.createElement(tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  return e;
+};
+
+function placeTooltip(tooltip, wrap, clientX, clientY, html) {
+  const r = wrap.getBoundingClientRect();
+  tooltip.innerHTML = html;
+  tooltip.hidden = false;
+  const half = tooltip.offsetWidth / 2;
+  const x = Math.min(Math.max(clientX - r.left, half), r.width - half);
+  tooltip.style.left = `${x}px`;
+  tooltip.style.top = `${clientY - r.top}px`;
+}
+
+function toViewBox(svg, vbW, vbH, clientX, clientY) {
+  const r = svg.getBoundingClientRect();
+  return { x: ((clientX - r.left) * vbW) / r.width, y: ((clientY - r.top) * vbH) / r.height };
+}
+
+const necklaceText = ({ blue, gold }) => `${blue} blue · ${gold} gold`;
+
+// ---------- 1. Roshambo match view ----------
+
+// match = { rounds, winner: 0|1, coinFlip }; labels = [nameA, nameB]
+// detail (optional) = { before: [h, h], after: [h, h], moved } for necklace challenges.
+export function renderMatch(container, match, { labels = ['Player A', 'Player B'], detail = null, animate = true } = {}) {
+  container.textContent = '';
+  const root = htmlEl('div', { class: `match${animate ? ' animate' : ''}` });
+
+  const head = htmlEl('div', { class: 'match-head' });
+  head.append(
+    htmlEl('span', { class: `player${match.winner === 0 ? ' winner' : ''}` }, labels[0]),
+    htmlEl('span', { class: 'vs' }, 'vs'),
+    htmlEl('span', { class: `player right${match.winner === 1 ? ' winner' : ''}` }, labels[1]),
+  );
+  root.append(head);
+
+  const list = htmlEl('ol', { class: 'rounds' });
+  const rows = matchSummary(match.rounds);
+  rows.forEach((r, i) => {
+    const li = htmlEl('li', { class: `round${r.result === 0 ? ' tie' : ''}`, style: `--i:${i}` });
+    const outcome = r.result > 0 ? 'beats' : r.result < 0 ? 'loses to' : 'ties';
+    li.append(
+      htmlEl('span', { class: 'round-n' }, `Round ${i + 1}`),
+      htmlEl('span', { class: `hand${r.result > 0 ? ' won' : ''}`, title: r.a, 'aria-label': r.a }, moveGlyph(r.a)),
+      htmlEl('span', { class: 'outcome' }, r.result === 0 ? 'tie — replay' : outcome),
+      htmlEl('span', { class: `hand mirror${r.result < 0 ? ' won' : ''}`, title: r.b, 'aria-label': r.b }, moveGlyph(r.b)),
+      htmlEl('span', { class: 'round-score' }, `${r.scoreA}–${r.scoreB}`),
+    );
+    list.append(li);
+  });
+  root.append(list);
+
+  const last = rows[rows.length - 1] || { scoreA: 0, scoreB: 0 };
+  const result = htmlEl('div', { class: 'match-result', style: `--i:${rows.length}` });
+  const winnerName = labels[match.winner];
+  result.append(htmlEl('strong', {}, `${winnerName} wins ${Math.max(last.scoreA, last.scoreB)}–${Math.min(last.scoreA, last.scoreB)}`));
+  if (match.coinFlip) result.append(htmlEl('span', { class: 'muted' }, ' (too many ties — decided by coin flip)'));
+  if (detail) {
+    const { moved, before, after } = detail;
+    const parts = [];
+    if (moved.gold) parts.push(`${moved.gold} gold`);
+    if (moved.blue) parts.push(`${moved.blue} blue`);
+    result.append(htmlEl('div', { class: 'moved' },
+      parts.length ? `takes ${parts.join(' + ')} necklace${moved.blue + moved.gold > 1 ? 's' : ''}` : 'but the loser had nothing to give'));
+    const table = htmlEl('div', { class: 'before-after' });
+    [0, 1].forEach((side) => {
+      table.append(htmlEl('span', { class: 'ba-name' }, labels[side]),
+        htmlEl('span', {}, necklaceText(before[side])),
+        htmlEl('span', { class: 'arrow' }, '→'),
+        htmlEl('span', {}, necklaceText(after[side])));
+    });
+    result.append(table);
+  }
+  root.append(result);
+  container.append(root);
+}
+
+// ---------- 2. Population view ----------
+
+const POP_W = 800, POP_MAX_H = 300;
+
+// Every person is one mark: students are circles, teachers are squares,
+// filled by what they hold. Faded marks are out of the game.
+export function createPopulationView({ svg, wrap, tooltip, onPick }) {
+  let layout = null, marks = [], classes = [], current = null;
+
+  function build(pop) {
+    svg.textContent = '';
+    layout = gridLayout(pop.size, POP_W, POP_MAX_H);
+    svg.setAttribute('viewBox', `0 0 ${POP_W} ${Math.max(layout.height, 1)}`);
+    const { cols, cell } = layout;
+    const r = cell * 0.36;
+    marks = new Array(pop.size);
+    classes = new Array(pop.size).fill('');
+    for (let id = 0; id < pop.size; id++) {
+      const cx = (id % cols) * cell + cell / 2, cy = Math.floor(id / cols) * cell + cell / 2;
+      marks[id] = pop.role[id] === STAFF
+        ? svgEl('rect', { x: cx - r, y: cy - r, width: 2 * r, height: 2 * r, rx: r * 0.3 }, svg)
+        : svgEl('circle', { cx, cy, r }, svg);
+    }
+  }
+
+  function idAt(clientX, clientY) {
+    if (!layout || !current) return -1;
+    const { x, y } = toViewBox(svg, POP_W, layout.height, clientX, clientY);
+    const col = Math.floor(x / layout.cell), row = Math.floor(y / layout.cell);
+    if (col < 0 || col >= layout.cols || row < 0) return -1;
+    const id = row * layout.cols + col;
+    return id < current.pop.size ? id : -1;
+  }
+
+  svg.addEventListener('mousemove', (e) => {
+    const id = idAt(e.clientX, e.clientY);
+    if (id < 0) { tooltip.hidden = true; return; }
+    const { pop, isActive } = current;
+    placeTooltip(tooltip, wrap, e.clientX, e.clientY,
+      `<strong>${personLabel(pop, id)}</strong><br>${necklaceText({ blue: pop.blue[id], gold: pop.gold[id] })}`
+      + `<br><span class="muted">${pop.gamesPlayed[id]} games · ${isActive(id) ? 'still playing' : 'out'}</span>`);
+  });
+  svg.addEventListener('mouseleave', () => { tooltip.hidden = true; });
+  if (onPick) svg.addEventListener('click', (e) => {
+    const id = idAt(e.clientX, e.clientY);
+    if (id >= 0) onPick(id, e);
+  });
+
+  return {
+    // isActive: (id) => boolean
+    update(pop, isActive) {
+      if (!current || current.pop !== pop) build(pop);
+      current = { pop, isActive };
+      for (let id = 0; id < pop.size; id++) {
+        const cls = `p-${classifyHolder(pop.blue[id], pop.gold[id])}${isActive(id) ? '' : ' out'}`;
+        if (cls !== classes[id]) { marks[id].setAttribute('class', cls); classes[id] = cls; }
+      }
+    },
+  };
+}
+
+// ---------- 3. Simulation view (charts) ----------
+
+const VB_W = 800, VB_H = 360;
+const M = { top: 24, right: 16, bottom: 56, left: 52 };
+const PW = VB_W - M.left - M.right;
+const PH = VB_H - M.top - M.bottom;
+const BASE_Y = M.top + PH;
+
+function drawYGrid(g, ticks, y, fmt) {
+  for (const t of ticks) {
+    const yy = y(t);
+    svgEl('line', { x1: M.left, x2: M.left + PW, y1: yy, y2: yy }, g);
+    svgEl('text', { x: M.left - 8, y: yy + 4, 'text-anchor': 'end' }, g).textContent = fmt(t);
+  }
+}
+
+// Histogram: how many people hold 1, 2, 3–4, 5–8 … necklaces of each colour.
+// People holding none of a colour are reported in the note, not drawn (they'd dwarf the rest).
+export function createHistogramView({ svg, wrap, tooltip, note }) {
+  svg.setAttribute('viewBox', `0 0 ${VB_W} ${VB_H}`);
+  let bars = [];
+
+  svg.addEventListener('mousemove', (e) => {
+    const { x, y } = toViewBox(svg, VB_W, VB_H, e.clientX, e.clientY);
+    const hit = bars.find((b) => x >= b.x0 && x < b.x1 && y >= M.top && y <= BASE_Y);
+    if (!hit) { tooltip.hidden = true; return; }
+    placeTooltip(tooltip, wrap, e.clientX, e.clientY,
+      `<strong>${hit.label} necklace${hit.label === '1' ? '' : 's'}</strong>`
+      + `<br>${fmtInt(hit.blue)} people hold this many blue`
+      + `<br>${fmtInt(hit.gold)} people hold this many gold`);
+  });
+  svg.addEventListener('mouseleave', () => { tooltip.hidden = true; });
+
+  return {
+    update(pop) {
+      let max = 1, noBlue = 0, noGold = 0;
+      for (let id = 0; id < pop.size; id++) {
+        max = Math.max(max, pop.blue[id], pop.gold[id]);
+        if (pop.blue[id] === 0) noBlue++;
+        if (pop.gold[id] === 0) noGold++;
+      }
+      const edges = log2Edges(max);
+      const blue = histogram(pop.blue, edges);
+      const gold = histogram(pop.gold, edges);
+      const yMax = Math.max(1, ...blue, ...gold);
+      const ticks = niceTicks(yMax, 4);
+      const y = linearScale([0, ticks[ticks.length - 1]], [BASE_Y, M.top]);
+      const nb = edges.length - 1;
+      const slot = PW / nb;
+      const barW = Math.min(36, (slot - 12) / 2);
+
+      svg.textContent = '';
+      drawYGrid(svgEl('g', { class: 'grid' }, svg), ticks, y, fmtInt);
+      svgEl('line', { class: 'baseline', x1: M.left, x2: M.left + PW, y1: BASE_Y, y2: BASE_Y }, svg);
+      const gBars = svgEl('g', {}, svg);
+      const gX = svgEl('g', { class: 'xtick' }, svg);
+      bars = [];
+      for (let i = 0; i < nb; i++) {
+        const cx = M.left + slot * (i + 0.5);
+        const label = binLabel(edges[i], edges[i + 1]);
+        [['blue', blue[i], cx - barW - 1], ['gold', gold[i], cx + 1]].forEach(([cls, v, x]) => {
+          if (v <= 0) return;
+          const h = Math.max(1.5, BASE_Y - y(v));
+          // 4px rounded top, square at the baseline
+          const r = Math.min(4, barW / 2, h);
+          svgEl('path', {
+            class: `bar ${cls}`,
+            d: `M${x},${BASE_Y}V${BASE_Y - h + r}q0,${-r} ${r},${-r}h${barW - 2 * r}q${r},0 ${r},${r}V${BASE_Y}Z`,
+          }, gBars);
+        });
+        svgEl('text', { x: cx, y: BASE_Y + 20, 'text-anchor': 'middle' }, gX).textContent = label;
+        bars.push({ x0: cx - slot / 2, x1: cx + slot / 2, label, blue: blue[i], gold: gold[i] });
+      }
+      svgEl('text', { class: 'axis-title', x: M.left + PW / 2, y: VB_H - 8, 'text-anchor': 'middle' }, svg)
+        .textContent = 'Necklaces held by one person';
+      if (note) note.textContent = `Not shown: ${fmtInt(noBlue)} people hold no blue necklaces and ${fmtInt(noGold)} hold no gold. `
+        + 'Bins double in width so a few big winners don’t squash everyone else.';
+    },
+  };
+}
+
+// Line chart over time. All three series are percentages, so they share one 0–100% axis.
+export const TREND_SERIES = [
+  { key: 'goldWithStudents', cls: 'gold', label: 'Gold necklaces held by students',
+    value: (h) => pct(h.studentGold, h.gold) },
+  { key: 'blueWithStaff', cls: 'blue', label: 'Blue necklaces held by teachers',
+    value: (h) => pct(h.staffBlue, h.blue) },
+  { key: 'empty', cls: 'neutral', label: 'People with no necklaces',
+    value: (h) => pct(h.empty, h.active + h.out) },
+];
+
+export function createTrendView({ svg, wrap, tooltip }) {
+  svg.setAttribute('viewBox', `0 0 ${VB_W} ${VB_H}`);
+  let state = null;
+
+  svg.addEventListener('mousemove', (e) => {
+    if (!state || state.history.length < 2) return;
+    const { x } = toViewBox(svg, VB_W, VB_H, e.clientX, e.clientY);
+    const { history, xs, cross } = state;
+    const tick = Math.round(xs.invert(x));
+    const h = history[Math.min(Math.max(tick, 0), history.length - 1)];
+    const cx = xs(h.tick);
+    cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.removeAttribute('visibility');
+    placeTooltip(tooltip, wrap, e.clientX, e.clientY,
+      `<strong>Tick ${h.tick}</strong> <span class="muted">(${fmtClock(h.tick)})</span>`
+      + TREND_SERIES.map((s) => `<br><span class="swatch ${s.cls}"></span> ${s.label}: <strong>${fmtPct(s.value(h))}</strong>`).join(''));
+  });
+  svg.addEventListener('mouseleave', () => {
+    tooltip.hidden = true;
+    state?.cross.setAttribute('visibility', 'hidden');
+  });
+
+  return {
+    update(history, maxTicks) {
+      svg.textContent = '';
+      const xMax = Math.max(1, maxTicks);
+      const xs = linearScale([0, xMax], [M.left, M.left + PW]);
+      xs.invert = linearScale([M.left, M.left + PW], [0, xMax]);
+      const y = linearScale([0, 100], [BASE_Y, M.top]);
+
+      drawYGrid(svgEl('g', { class: 'grid' }, svg), [0, 25, 50, 75, 100], y, (t) => `${t}%`);
+      svgEl('line', { class: 'baseline', x1: M.left, x2: M.left + PW, y1: BASE_Y, y2: BASE_Y }, svg);
+      const gX = svgEl('g', { class: 'xtick' }, svg);
+      for (const t of niceTicks(xMax, 6).filter((t) => t <= xMax)) {
+        svgEl('text', { x: xs(t), y: BASE_Y + 20, 'text-anchor': 'middle' }, gX).textContent = String(t);
+      }
+      svgEl('text', { class: 'axis-title', x: M.left + PW / 2, y: VB_H - 8, 'text-anchor': 'middle' }, svg)
+        .textContent = 'Tick (one 5-second game slot)';
+
+      const cross = svgEl('line', { class: 'crosshair', y1: M.top, y2: BASE_Y, visibility: 'hidden' }, svg);
+      for (const s of TREND_SERIES) {
+        const d = history.map((h, i) => `${i ? 'L' : 'M'}${xs(h.tick).toFixed(1)},${y(s.value(h)).toFixed(1)}`).join('');
+        svgEl('path', { class: `trend ${s.cls}`, d }, svg);
+        const lastH = history[history.length - 1];
+        if (lastH) svgEl('circle', { class: `trend-end ${s.cls}`, cx: xs(lastH.tick), cy: y(s.value(lastH)), r: 4 }, svg);
+      }
+      state = { history, xs, cross };
+    },
+  };
+}
+
+// Tick → "m:ss" of passing time at 5 s per game.
+export function fmtClock(tick, secondsPerTick = 5) {
+  const s = tick * secondsPerTick;
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}

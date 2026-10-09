@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Washburn Roshambo</title>
+  <meta name="description" content="Simulate Washburn's rock-paper-scissors bead necklace game: students start with blue necklaces, teachers with gold, and the best-of-3 winner takes beads from the loser. Try different rules and see who ends up with what.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="viz-root">
+    <header>
+      <div class="intro">
+        <h1>Washburn Roshambo</h1>
+        <p class="lede">
+          Every student starts with a <strong class="ink-blue">blue</strong> necklace and every teacher with a
+          <strong class="ink-gold">gold</strong> one. Two people play rock-paper-scissors, and the best-of-3 winner
+          takes necklaces from the loser. People don't agree on the other rules, so pick some and see
+          where the necklaces end up.
+        </p>
+      </div>
+      <!-- Share card (.share with qr.svg) goes here once the page has its URL, matching Central Limit Dice. -->
+    </header>
+
+    <!-- ---------- 1. One challenge ---------- -->
+    <section class="chart-card match-card" id="match-card" aria-labelledby="match-title">
+      <div class="chart-head">
+        <h2 id="match-title">One challenge: best 2 out of 3</h2>
+        <span class="legend">Ties are replayed and don't count.</span>
+      </div>
+      <div class="match-controls">
+        <button type="button" id="practice">✊ Practice match</button>
+        <span class="divider" aria-hidden="true"></span>
+        <div class="control">
+          <label for="challenger">Challenger ID</label>
+          <input type="number" id="challenger" name="challenger" min="0" value="0" inputmode="numeric">
+        </div>
+        <div class="control">
+          <label for="target">Target ID</label>
+          <input type="number" id="target" name="target" min="0" value="1600" inputmode="numeric">
+        </div>
+        <button type="button" id="random-pair">Random pair</button>
+        <button type="button" id="challenge" class="primary">Play challenge</button>
+      </div>
+      <p class="note">A challenge uses the current rules and changes the population below. Click people in the population grid to fill in the IDs.</p>
+      <div id="match" class="match-box" aria-live="polite"></div>
+    </section>
+
+    <!-- ---------- 2. Setup ---------- -->
+    <form id="setup" class="setup" autocomplete="off">
+      <section class="controls" aria-labelledby="pop-title">
+        <h2 id="pop-title" class="section-title">Population</h2>
+        <div class="control">
+          <label for="numStudents">Students</label>
+          <input type="number" id="numStudents" name="numStudents" min="0" max="10000" value="1600">
+        </div>
+        <div class="control">
+          <label for="numStaff">Teachers &amp; staff</label>
+          <input type="number" id="numStaff" name="numStaff" min="0" max="2000" value="150">
+        </div>
+        <div class="control">
+          <label for="numBlue">Blue necklaces</label>
+          <input type="number" id="numBlue" name="numBlue" min="0" value="1600">
+        </div>
+        <div class="control">
+          <label for="numGold">Gold necklaces</label>
+          <input type="number" id="numGold" name="numGold" min="0" value="150">
+        </div>
+        <div class="control">
+          <label for="maxGamesPerPerson">Games per person</label>
+          <input type="number" id="maxGamesPerPerson" name="maxGamesPerPerson" min="1" max="5000" value="300">
+        </div>
+        <div class="control">
+          <label for="seed">Random seed</label>
+          <input type="text" id="seed" name="seed" value="washburn" size="10">
+        </div>
+        <p class="hint">Blue necklaces go to randomly chosen students and gold to randomly chosen teachers.
+          <span id="clock-hint"></span></p>
+      </section>
+
+      <section class="controls rules-card" aria-labelledby="rules-title">
+        <h2 id="rules-title" class="section-title">Rules</h2>
+        <div id="rules" class="rules"></div>
+      </section>
+
+      <section class="controls" aria-labelledby="strategy-title">
+        <h2 id="strategy-title" class="section-title">Strategy</h2>
+        <div class="control">
+          <label for="strategy">Who challenges whom</label>
+          <select id="strategy" name="strategyId"></select>
+        </div>
+        <div id="strategy-params" class="strategy-params"></div>
+        <p class="hint" id="strategy-desc"></p>
+      </section>
+    </form>
+
+    <!-- ---------- 3. Simulation ---------- -->
+    <section class="controls sim-controls" aria-label="Simulation controls">
+      <div class="control buttons">
+        <button type="button" id="play" class="primary">▶ Run</button>
+        <button type="button" id="step">Step one tick</button>
+        <button type="button" id="to-end">Run to the end</button>
+        <button type="button" id="reset">Reset</button>
+        <button type="button" id="replay" title="Show one of the games from the latest tick">Show a game from this tick</button>
+      </div>
+      <div class="control">
+        <label for="speed">Speed</label>
+        <select id="speed">
+          <option value="2">Slow: 2 ticks/sec</option>
+          <option value="10" selected>Medium: 10 ticks/sec</option>
+          <option value="30">Fast: 30 ticks/sec</option>
+          <option value="0">As fast as possible</option>
+        </select>
+      </div>
+      <p class="demo-status" id="status"></p>
+    </section>
+
+    <section class="stats" aria-label="Statistics">
+      <div class="stat hero">
+        <span class="label">Tick</span>
+        <span class="value" id="stat-tick">0</span>
+        <span class="sub"><span id="stat-clock">0:00</span> · of <span id="max-ticks">300</span> ticks</span>
+      </div>
+      <div class="stat">
+        <span class="label">Games played</span>
+        <span class="value" id="stat-games">0</span>
+        <span class="sub" id="stat-games-sub"></span>
+      </div>
+      <div class="stat">
+        <span class="label">Still playing</span>
+        <span class="value" id="stat-active">0</span>
+        <span class="sub" id="stat-active-sub"></span>
+      </div>
+      <div class="stat">
+        <span class="label">No necklaces</span>
+        <span class="value" id="stat-empty">0</span>
+        <span class="sub">people holding nothing</span>
+      </div>
+      <div class="stat">
+        <span class="label">Gold held by students</span>
+        <span class="value" id="stat-gold-students">0%</span>
+        <span class="sub" id="stat-gold-students-sub"></span>
+      </div>
+      <div class="stat">
+        <span class="label">Blue held by teachers</span>
+        <span class="value" id="stat-blue-staff">0%</span>
+        <span class="sub" id="stat-blue-staff-sub"></span>
+      </div>
+      <div class="stat">
+        <span class="label">Most held by one person</span>
+        <span class="value" id="stat-max">0</span>
+        <span class="sub">necklaces</span>
+      </div>
+      <div class="stat">
+        <span class="label">Blue / gold in play</span>
+        <span class="value" id="stat-total">0</span>
+        <span class="sub">never changes</span>
+      </div>
+    </section>
+
+    <section class="chart-card" aria-labelledby="popgrid-title">
+      <div class="chart-head">
+        <h2 id="popgrid-title">Everyone at Washburn</h2>
+        <div class="legend">
+          <span class="key"><span class="swatch dot blue"></span>Blue</span>
+          <span class="key"><span class="swatch dot gold"></span>Gold</span>
+          <span class="key"><span class="swatch dot both"></span>Both</span>
+          <span class="key"><span class="swatch dot none"></span>None</span>
+          <span class="key"><span class="swatch dot shape-circle"></span>Student</span>
+          <span class="key"><span class="swatch dot shape-square"></span>Teacher</span>
+        </div>
+      </div>
+      <div class="chart-wrap" id="pop-wrap">
+        <svg id="pop-chart" class="pop-chart" viewBox="0 0 800 300" role="img" aria-labelledby="popgrid-title"></svg>
+        <div class="tooltip" id="pop-tooltip" hidden></div>
+      </div>
+      <p class="note">One mark per person, ordered by ID: students first, then teachers in the last rows. Faded marks are out of the game.</p>
+    </section>
+
+    <section class="chart-card" aria-labelledby="hist-title">
+      <div class="chart-head">
+        <h2 id="hist-title">How many necklaces each person holds</h2>
+        <div class="legend">
+          <span class="key"><span class="swatch blue"></span>Blue necklaces</span>
+          <span class="key"><span class="swatch gold"></span>Gold necklaces</span>
+        </div>
+      </div>
+      <div class="chart-wrap" id="hist-wrap">
+        <svg id="hist-chart" class="chart" viewBox="0 0 800 360" role="img" aria-labelledby="hist-title"></svg>
+        <div class="tooltip" id="hist-tooltip" hidden></div>
+      </div>
+      <p class="note" id="hist-note"></p>
+    </section>
+
+    <section class="chart-card" aria-labelledby="trend-title">
+      <div class="chart-head">
+        <h2 id="trend-title">Over time</h2>
+        <div class="legend">
+          <span class="key"><span class="swatch line gold"></span>Gold held by students</span>
+          <span class="key"><span class="swatch line blue"></span>Blue held by teachers</span>
+          <span class="key"><span class="swatch line neutral"></span>People with no necklaces</span>
+        </div>
+      </div>
+      <div class="chart-wrap" id="trend-wrap">
+        <svg id="trend-chart" class="chart" viewBox="0 0 800 360" role="img" aria-labelledby="trend-title"></svg>
+        <div class="tooltip" id="trend-tooltip" hidden></div>
+      </div>
+    </section>
+
+    <details class="explain">
+      <summary>Things to try in class</summary>
+      <ul>
+        <li><strong>Winner takes all:</strong> how fast do the necklaces pile up on a few people? How many people end up with nothing?</li>
+        <li><strong>Gold first vs. blue first:</strong> which rule moves gold necklaces into students' hands faster?</li>
+        <li><strong>Teachers can't challenge students:</strong> does it protect students, or teachers?</li>
+        <li><strong>Zero necklaces can still challenge:</strong> people with nothing to lose keep playing. What does that do to the big winners?</li>
+        <li>Keep the same seed and change one rule at a time, so the only difference is the rule.</li>
+      </ul>
+    </details>
+    <details class="explain">
+      <summary>How the simulation works</summary>
+      <ul>
+        <li>Time moves in <strong>ticks</strong>, each one 5-second game slot. A person plays at most one game per tick
+          and no more than the "Games per person" limit (25 minutes ÷ 5 s = 300).</li>
+        <li>A challenge is <em>directed</em>: the challenger picks a target. The target must have at least one necklace to lose.</li>
+        <li>"Teachers CANNOT challenge students" still lets a student challenge a teacher. Pick "never play each other" to keep them apart completely.</li>
+        <li>If someone with no necklaces challenges and loses, nothing changes hands.</li>
+        <li>Any setup change starts a new run. The same seed and settings always give the same result.</li>
+      </ul>
+    </details>
+  </main>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
