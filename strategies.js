@@ -14,7 +14,8 @@ const registry = new Map();
 
 // def = {
 //   id, name, description,
-//   params: [{ key, label, type: 'range' | 'number', min, max, step, default }],
+//   params: [{ key, label, type: 'range' | 'number', min, max, step, default }
+//            | { key, label, type: 'select', options: [{ value, label }], default }],
 //   create(params) => {
 //     init?(ctx),
 //     selectPairs(ctx) => [[challengerId, targetId], ...],   // disjoint within a tick
@@ -45,7 +46,96 @@ export function defaultParams(def) {
   return out;
 }
 
+export const DEFAULT_STRATEGY = 'classroom';
+
 // ---------- Built-in strategies ----------
+
+// Up to k distinct random ids from 0…n-1, never `exclude`. Order is random.
+export function sampleGroup(rng, n, k, exclude) {
+  const want = Math.min(k, n - 1);
+  if (want <= 0) return [];
+  if (want * 2 > n) {
+    // big group: shuffle everyone and take a prefix
+    const all = [];
+    for (let id = 0; id < n; id++) if (id !== exclude) all.push(id);
+    return rng.shuffle(all).slice(0, want);
+  }
+  const seen = new Set([exclude]);
+  const out = [];
+  while (out.length < want) {
+    const id = rng.int(n);
+    if (!seen.has(id)) { seen.add(id); out.push(id); }
+  }
+  return out;
+}
+
+// Pick a target from the group by score (total necklaces). Earlier entries win ties,
+// and the group is in random order, so ties are broken at random.
+export const CHALLENGE_PICKERS = {
+  random: (group) => group[0],
+  highest: (group, score) => group.reduce((best, id) => (score(id) > score(best) ? id : best)),
+  lowest: (group, score) => group.reduce((best, id) => (score(id) < score(best) ? id : best)),
+};
+
+// The target's answer, when the rules let them decline.
+export const DECLINE_CHOICES = {
+  never: () => 'accept',
+  ifMore: (mine, theirs) => (theirs > mine ? 'decline' : 'accept'),
+  ifLess: (mine, theirs) => (theirs < mine ? 'decline' : 'accept'),
+  coin: (mine, theirs, rng) => (rng.next() < 0.5 ? 'decline' : 'accept'),
+};
+
+registerStrategy({
+  id: 'classroom',
+  name: 'Students choose from a classroom',
+  description: 'Each tick, everyone still playing is shuffled. Each person not yet paired looks over a random group '
+    + '(about one classroom) and challenges someone in it they’re allowed to challenge, picked by the challenge option. '
+    + 'When the rules let them decline, a student uses the decline option. Score = total necklaces held.',
+  params: [
+    { key: 'challengeBy', label: 'Who they challenge', type: 'select', default: 'random',
+      options: [
+        { value: 'random', label: 'Challenge at random' },
+        { value: 'highest', label: 'Challenge the HIGHEST scorer they can' },
+        { value: 'lowest', label: 'Challenge the LOWEST scorer (above 0) they can' },
+      ] },
+    { key: 'declineBy', label: 'When they decline', type: 'select', default: 'never',
+      options: [
+        { value: 'never', label: 'Never decline' },
+        { value: 'ifMore', label: 'Decline if allowed and the challenger has MORE necklaces' },
+        { value: 'ifLess', label: 'Decline if allowed and the challenger has LESS necklaces' },
+        { value: 'coin', label: 'Decline with a coin flip (if allowed)' },
+      ] },
+    { key: 'groupSize', label: 'Challenge group size', type: 'number', min: 1, max: 5000, step: 1, default: 30 },
+  ],
+  create({ challengeBy = 'random', declineBy = 'never', groupSize = 30 } = {}) {
+    const pick = CHALLENGE_PICKERS[challengeBy] ?? CHALLENGE_PICKERS.random;
+    const decide = DECLINE_CHOICES[declineBy] ?? DECLINE_CHOICES.never;
+    return {
+      selectPairs(ctx) {
+        const { pop, rng } = ctx;
+        const score = (id) => necklaceCount(pop, id);
+        const order = [];
+        for (let id = 0; id < pop.size; id++) if (ctx.isActive(id)) order.push(id);
+        rng.shuffle(order);
+        const paired = new Uint8Array(pop.size);
+        const pairs = [];
+        for (const a of order) {
+          if (paired[a]) continue;
+          const group = sampleGroup(rng, pop.size, groupSize, a)
+            .filter((b) => !paired[b] && ctx.canChallenge(a, b));
+          if (group.length === 0) continue;
+          const b = pick(group, score);
+          paired[a] = paired[b] = 1;
+          pairs.push([a, b]);
+        }
+        return pairs;
+      },
+      respond(ctx, challenger, target) {
+        return decide(necklaceCount(ctx.pop, target), necklaceCount(ctx.pop, challenger), ctx.rng);
+      },
+    };
+  },
+});
 
 // How far ahead in the shuffled list to look for a valid partner. Keeps each tick O(N).
 const LOOKAHEAD = 50;
@@ -103,7 +193,7 @@ registerStrategy({
 
 // One tick = one game slot (5 s of passing time). Each person plays at most one game per tick,
 // so the run lasts at most rules.maxGamesPerPerson ticks.
-export function createSimulation({ cfg = {}, rules = {}, strategyId = 'random', params = {}, seed = Date.now() } = {}) {
+export function createSimulation({ cfg = {}, rules = {}, strategyId = DEFAULT_STRATEGY, params = {}, seed = Date.now() } = {}) {
   const state = createGameState({ cfg, rules, seed });
   const def = getStrategy(strategyId);
   const strategy = def.create({ ...defaultParams(def), ...params });

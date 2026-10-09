@@ -58,8 +58,19 @@ Dependencies go one way: `main.js` → `game-view.js` / `strategies.js` → `gam
 - The UI builds parameter controls from `params` automatically.
 - The scheduler re-validates every proposed pair: pairs must be disjoint and pass `canChallenge`. Rejected pairs are counted in `history[].rejected`.
 - `moveChooser(rng, history, personId, side)` is the hook for biased or adaptive RPS play.
-- Only `random` ("Pairs are randomly chosen") exists so far. Its params are `participation` and `declineRate` (default 0.5; only matters when a declining rule is on).
-- **Next planned:** a student-agency strategy, choosing whom to challenge and when to decline, built on `selectPairs` + `respond`.
+- Param types: `range`, `number` and `select` (`options: [{ value, label }]`). `main.js` builds the matching control, and `readConfig` validates each type.
+- `classroom`, "Students choose from a classroom", is the default (`DEFAULT_STRATEGY`). A strategy is a combination of two options:
+  - `challengeBy`: `random` | `highest` | `lowest`;
+  - `declineBy`: `never` | `ifMore` | `ifLess` | `coin`;
+  - plus `groupSize` (default 30).
+- How `classroom` works each tick:
+  1. Active people are shuffled.
+  2. Each unpaired person samples `groupSize` random ids (`sampleGroup`) and keeps those still unpaired whom they may challenge.
+  3. They pick a target by score (total necklaces) using `CHALLENGE_PICKERS`. Ties go to whoever appears first in the random sample.
+  4. `respond` applies `DECLINE_CHOICES`. It's only consulted when the rules allow a decline.
+  - Teachers use the same challenge option but always accept.
+- `random`, "Pairs are randomly chosen", is kept for comparison. Its params are `participation` and `declineRate`.
+- On hold (user likes it, may return): give each student a fixed declining *tendency*, and group the decline chart by it to remove survivorship bias.
 
 ## Look and feel
 This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualizer`, difficult-tech.com/central_limit_dice/) and must look like part of the same set.

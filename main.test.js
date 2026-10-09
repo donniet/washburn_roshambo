@@ -7,8 +7,8 @@ test('readConfig: empty form gives the defaults', () => {
   const c = readConfig({});
   assert.deepEqual(c.cfg, DEFAULT_POPULATION);
   assert.deepEqual(c.rules, DEFAULT_RULES);
-  assert.equal(c.strategyId, 'random');
-  assert.deepEqual(c.params, { participation: 1, declineRate: 0.5 });
+  assert.equal(c.strategyId, 'classroom');
+  assert.deepEqual(c.params, { challengeBy: 'random', declineBy: 'never', groupSize: 30 });
   assert.equal(c.seed, 'washburn');
 });
 
@@ -38,12 +38,20 @@ test('readConfig: clamps and rejects bad input', () => {
   assert.equal(c.cfg.numGold, DEFAULT_POPULATION.numGold);
   assert.equal(c.rules.maxGamesPerPerson, 1);
   assert.equal(c.rules.transfer, DEFAULT_RULES.transfer);
-  assert.equal(c.strategyId, 'random');
-  assert.equal(c.params.participation, 1);
+  assert.equal(c.strategyId, 'classroom');
+  assert.equal(c.params.groupSize, 30);
   assert.equal(c.seed, 'monday');
 });
 
 test('readConfig: an empty school still has one person', () => {
   const c = readConfig({ numStudents: '0', numStaff: '0' });
   assert.equal(c.cfg.numStudents + c.cfg.numStaff, 1);
+});
+
+test('readConfig: classroom strategy options', () => {
+  const c = readConfig({ strategyId: 'classroom', 'param:challengeBy': 'highest', 'param:declineBy': 'ifLess', 'param:groupSize': '12' });
+  assert.deepEqual(c.params, { challengeBy: 'highest', declineBy: 'ifLess', groupSize: 12 });
+  const bad = readConfig({ strategyId: 'classroom', 'param:challengeBy': 'sneaky', 'param:groupSize': '0' });
+  assert.equal(bad.params.challengeBy, 'random');
+  assert.equal(bad.params.groupSize, 1);
 });

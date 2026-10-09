@@ -4,7 +4,9 @@ import {
   DEFAULT_RULES, DEFAULT_POPULATION, RULE_OPTIONS, createRng, playMatch, resolveChallenge, isActive,
   challengeError, declineError,
 } from './game.js';
-import { createSimulation, listStrategies, getStrategy, defaultParams, summarize } from './strategies.js';
+import {
+  createSimulation, listStrategies, getStrategy, defaultParams, summarize, DEFAULT_STRATEGY,
+} from './strategies.js';
 import {
   renderMatch, renderDecline, createPopulationView, createDeclineView, createHistogramView, createColorHistogramView, createTrendView,
   personLabel, fmtInt, fmtPct, pct, fmtClock,
@@ -42,14 +44,18 @@ export function readConfig(values = {}) {
   rules.maxGamesPerPerson = clampInt(values.maxGamesPerPerson, LIMITS.maxGamesPerPerson, DEFAULT_RULES.maxGamesPerPerson);
 
   const ids = listStrategies().map((s) => s.id);
-  const strategyId = ids.includes(values.strategyId) ? values.strategyId : 'random';
+  const strategyId = ids.includes(values.strategyId) ? values.strategyId : DEFAULT_STRATEGY;
   const def = getStrategy(strategyId);
   const params = defaultParams(def);
   for (const p of def.params) {
-    const v = Number(values[`param:${p.key}`]);
-    if (values[`param:${p.key}`] !== undefined && values[`param:${p.key}`] !== '' && Number.isFinite(v)) {
-      params[p.key] = Math.min(p.max ?? Infinity, Math.max(p.min ?? -Infinity, v));
+    const raw = values[`param:${p.key}`];
+    if (raw === undefined || raw === '') continue;
+    if (p.type === 'select') {
+      if (p.options.some((o) => o.value === raw)) params[p.key] = raw;
+      continue;
     }
+    const v = Number(raw);
+    if (Number.isFinite(v)) params[p.key] = Math.min(p.max ?? Infinity, Math.max(p.min ?? -Infinity, v));
   }
 
   const seedRaw = String(values.seed ?? '').trim();
@@ -98,11 +104,20 @@ function init() {
       const wrap = document.createElement('div');
       wrap.className = 'control';
       const id = `param-${p.key}`;
-      wrap.innerHTML = `<label for="${id}">${p.label}</label>
-        <div class="n-row"><input type="${p.type === 'range' ? 'range' : 'number'}" id="${id}" name="param:${p.key}"
-          min="${p.min}" max="${p.max}" step="${p.step ?? 1}" value="${p.default}"><output for="${id}">${p.default}</output></div>`;
-      const input = wrap.querySelector('input'), out = wrap.querySelector('output');
-      input.addEventListener('input', () => { out.textContent = input.value; });
+      if (p.type === 'select') {
+        wrap.innerHTML = `<label for="${id}">${p.label}</label><select id="${id}" name="param:${p.key}"></select>`;
+        const sel = wrap.querySelector('select');
+        for (const o of p.options) sel.append(new Option(o.label, o.value, o.value === p.default, o.value === p.default));
+      } else if (p.type === 'range') {
+        wrap.innerHTML = `<label for="${id}">${p.label}</label>
+          <div class="n-row"><input type="range" id="${id}" name="param:${p.key}"
+            min="${p.min}" max="${p.max}" step="${p.step ?? 1}" value="${p.default}"><output for="${id}">${p.default}</output></div>`;
+        const input = wrap.querySelector('input'), out = wrap.querySelector('output');
+        input.addEventListener('input', () => { out.textContent = input.value; });
+      } else {
+        wrap.innerHTML = `<label for="${id}">${p.label}</label>
+          <input type="number" id="${id}" name="param:${p.key}" min="${p.min}" max="${p.max}" step="${p.step ?? 1}" value="${p.default}">`;
+      }
       box.append(wrap);
     }
   }

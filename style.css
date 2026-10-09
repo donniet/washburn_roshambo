@@ -310,6 +310,9 @@ fieldset.rule legend {
 .radio input { accent-color: var(--accent); margin: 2px 0 0; width: 16px; height: 16px; flex: none; }
 .strategy-params { display: flex; flex-wrap: wrap; gap: 16px 24px; }
 .strategy-params output { font-size: 1.1rem; min-width: 4ch; }
+.strategy-params { flex-basis: 100%; min-width: 0; }
+.strategy-params .control { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+.strategy-params select, #strategy { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
 
 /* ---------- one challenge ---------- */
 .match-card { margin-bottom: 16px; }
