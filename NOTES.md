@@ -10,7 +10,7 @@ Visualize the outcome of the game (the distribution of blue and gold necklaces a
 
 * There are roughly 1600 students and roughly 150 staff, but these should be the defaults, and editable 
 * All students start with a blue necklace, and all staff start with a gold necklace.  This should be configurable by limiting the number of blue and gold necklaces to a different number than the number of students, and randomly choosing the students and staff that receive a blue or gold necklace.
-* Students are not allowed to disrupt class, so they can only play during passing time, or for a total of 25 minutes.  If each game takes 5 seconds to play, thats a maximum of 1500 games that any one person can play.  This number should be configurable.
+* Students are not allowed to disrupt class, so they can only play during passing time, or for a total of 25 minutes.  If each game takes 5 seconds to play, thats a maximum of 300 games that any one person can play.  This number should be configurable.
 
 # Fixed Rules
 
