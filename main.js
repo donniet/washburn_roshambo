@@ -104,7 +104,7 @@ function init() {
   // Views
   const matchBox = $('match');
   const popView = createPopulationView({
-    svg: $('pop-chart'), wrap: $('pop-wrap'), tooltip: $('pop-tooltip'),
+    svg: $('pop-chart'), wrap: $('pop-wrap'), tooltip: $('pop-tooltip'), sizeKey: $('pop-size-key'),
     onPick: (id) => {
       // Click fills the challenger first, then the target.
       const c = $('challenger'), t = $('target');

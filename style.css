@@ -382,17 +382,23 @@ fieldset.rule legend {
 .chart-card + .chart-card { margin-top: 16px; }
 
 .pop-chart { display: block; width: 100%; height: auto; cursor: crosshair; }
-.pop-chart .p-blue { fill: var(--necklace-blue); }
+.pop-chart .p-blue, .size-key .p-blue { fill: var(--necklace-blue); }
 .pop-chart .p-gold { fill: var(--necklace-gold); }
-.pop-chart .p-both { fill: var(--necklace-blue); stroke: var(--necklace-gold); stroke-width: 2.5; }
 .pop-chart .p-none { fill: var(--necklace-none); }
+/* thin surface-coloured edge keeps overlapping marks distinct */
+.pop-chart .disk, .size-key .disk { stroke: var(--surface-1); stroke-width: 0.9; }
+.pop-chart .ring { fill: none; stroke: var(--necklace-gold); }
 .pop-chart .out { opacity: 0.3; }
+.size-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 8px; }
+.size-key-label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); }
+.size-key svg { display: block; overflow: visible; }
+.size-key text { fill: var(--text-secondary); font-size: 12px; font-family: inherit; font-variant-numeric: tabular-nums; }
 
 .swatch.blue { background: var(--necklace-blue); }
 .swatch.gold { background: var(--necklace-gold); }
 .swatch.neutral { background: var(--text-muted); }
 .swatch.dot { border-radius: 50%; }
-.swatch.dot.both { background: var(--necklace-blue); box-shadow: inset 0 0 0 2px var(--necklace-gold); }
+.swatch.dot.both { background: var(--necklace-blue); box-shadow: inset 0 0 0 3px var(--necklace-gold); }
 .swatch.dot.none { background: var(--necklace-none); }
 .swatch.dot.shape-circle { background: transparent; border: 1.5px solid var(--text-secondary); }
 .swatch.dot.shape-square { background: transparent; border: 1.5px solid var(--text-secondary); border-radius: 3px; }

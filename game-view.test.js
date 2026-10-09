@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   moveGlyph, matchSummary, classifyHolder, gridLayout, log2Edges, binLabel, histogram,
   linearScale, niceTicks, pct, fmtPct, fmtClock, personLabel, TREND_SERIES,
+  markRadius, sizeKeyValues, MARK_EMPTY, MARK_MIN, MARK_MAX,
 } from './game-view.js';
 import { MOVES, STAFF, STUDENT } from './game.js';
 
@@ -84,4 +85,33 @@ test('formatting helpers', () => {
 test('trend series are percentages of the right totals', () => {
   const h = { gold: 150, studentGold: 30, blue: 1600, staffBlue: 160, empty: 175, active: 1500, out: 250 };
   assert.deepEqual(TREND_SERIES.map((s) => s.value(h)), [20, 10, 10]);
+});
+
+test('markRadius: log scale from 1 necklace to everything in play', () => {
+  const cell = 10, maxN = 1750;
+  assert.equal(markRadius(0, maxN, cell), MARK_EMPTY * cell);
+  assert.equal(markRadius(1, maxN, cell), MARK_MIN * cell);
+  const close = (a, b) => Math.abs(a - b) < 1e-9;
+  assert.ok(close(markRadius(maxN, maxN, cell), MARK_MAX * cell));
+  assert.ok(close(markRadius(5000, maxN, cell), MARK_MAX * cell), 'clamped');
+  // every doubling adds the same radius
+  const d1 = markRadius(4, maxN, cell) - markRadius(2, maxN, cell);
+  const d2 = markRadius(64, maxN, cell) - markRadius(32, maxN, cell);
+  assert.ok(Math.abs(d1 - d2) < 1e-9);
+  let prev = -1;
+  for (let n = 0; n <= maxN; n++) { const r = markRadius(n, maxN, cell); assert.ok(r >= prev); prev = r; }
+  assert.equal(markRadius(1, 1, cell), MARK_MIN * cell, 'single necklace in play');
+});
+
+test('markRadius: two maximal neighbours overlap by at most 1/3 of a mark', () => {
+  const cell = 11;
+  const d = 2 * markRadius(100, 100, cell);
+  const overlap = d - cell; // centres are one cell apart
+  assert.ok(overlap <= d / 3 + 1e-9, `overlap ${overlap} of ${d}`);
+});
+
+test('sizeKeyValues: powers of ten then the max', () => {
+  assert.deepEqual(sizeKeyValues(1750), [1, 10, 100, 1000, 1750]);
+  assert.deepEqual(sizeKeyValues(100), [1, 10, 100]);
+  assert.deepEqual(sizeKeyValues(1), [1]);
 });

@@ -56,6 +56,12 @@ This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualize
 - Game-specific rules come after the "Washburn Roshambo — game-specific styles" banner. Reuse sibling patterns; don't invent new ones.
 - Game tokens: `--necklace-blue` (= `--series-1`), `--necklace-gold`, `--necklace-none`.
   - Gold is `#b8840f` light / `#bc8c20` dark. Both were validated with the dataviz palette validator (lightness band, CVD separation, ≥3:1 contrast). Re-validate if you change them.
+- Population grid: one mark per person (circle = student, square = teacher).
+  - Blue is a disk and gold is a ring drawn on top; gold-only holders get a solid gold mark.
+  - Each colour is sized by its own count on one shared log₂ scale (`markRadius`). The scale runs from `MARK_MIN` (1 necklace) to `MARK_MAX` (every necklace in play).
+  - `MARK_MAX = 0.75` cell caps neighbour overlap at ⅓ of a mark's width.
+  - Bigger marks are re-appended so they draw on top.
+  - An earlier version split one mark by area. Don't go back to it: small gold holdings disappeared under large blue ones.
 - Charts: SVG with a fixed `viewBox` (800 wide, margins `{24,16,56,52}`), coloured only through CSS classes. Text uses text tokens, never series colours.
 
 ## Open items

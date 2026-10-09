@@ -185,25 +185,72 @@ export function renderMatch(container, match, { labels = ['Player A', 'Player B'
 
 const POP_W = 800, POP_MAX_H = 300;
 
-// Every person is one mark: students are circles, teachers are squares,
-// filled by what they hold. Faded marks are out of the game.
-export function createPopulationView({ svg, wrap, tooltip, onPick }) {
-  let layout = null, marks = [], classes = [], current = null;
+// Mark sizes, as a fraction of the grid cell. Holding 1 necklace gives the smallest
+// mark; holding every necklace in play gives the largest. MARK_MAX = 0.75 means a
+// maximal mark is 1.5 cells across, so two maximal neighbours overlap by half a
+// cell, which is 1/3 of a mark's width.
+export const MARK_EMPTY = 0.16, MARK_MIN = 0.3, MARK_MAX = 0.75;
+
+// Radius (in the same units as `cell`) for someone holding `n` of `maxN` necklaces.
+// Log₂ scale: every doubling of necklaces adds the same amount of radius.
+export function markRadius(n, maxN, cell) {
+  if (n <= 0) return MARK_EMPTY * cell;
+  const t = maxN > 1 ? Math.min(1, Math.log2(n) / Math.log2(maxN)) : 0;
+  return (MARK_MIN + (MARK_MAX - MARK_MIN) * t) * cell;
+}
+
+// Width of the gold ring drawn over a blue disk, as a fraction of the cell.
+export const RING_WIDTH = 0.14;
+
+// Sizes for the size key: powers of ten up to maxN, plus maxN itself.
+export function sizeKeyValues(maxN) {
+  const vals = [];
+  for (let v = 1; v < maxN; v *= 10) vals.push(v);
+  if (maxN >= 1) vals.push(maxN);
+  return vals;
+}
+
+// Draw a square (teachers) or circle (students) of "radius" r centred on 0,0.
+function setShape(node, isSquare, r) {
+  if (isSquare) {
+    node.setAttribute('x', -r); node.setAttribute('y', -r);
+    node.setAttribute('width', 2 * r); node.setAttribute('height', 2 * r);
+    node.setAttribute('rx', r * 0.3);
+  } else {
+    node.setAttribute('r', r);
+  }
+}
+
+// Every person is one mark: students are circles, teachers are squares.
+// Each colour is sized by its own count on the same log scale: blue is a disk,
+// gold is a ring drawn on top of it (or a solid disk if they hold no blue).
+// Faded marks are out of the game.
+export function createPopulationView({ svg, wrap, tooltip, onPick, sizeKey }) {
+  let layout = null, groups = [], blues = [], golds = [], keys = [], current = null, maxN = 1;
 
   function build(pop) {
     svg.textContent = '';
     layout = gridLayout(pop.size, POP_W, POP_MAX_H);
     svg.setAttribute('viewBox', `0 0 ${POP_W} ${Math.max(layout.height, 1)}`);
     const { cols, cell } = layout;
-    const r = cell * 0.36;
-    marks = new Array(pop.size);
-    classes = new Array(pop.size).fill('');
+    groups = new Array(pop.size);
+    blues = new Array(pop.size);
+    golds = new Array(pop.size);
+    keys = new Array(pop.size).fill('');
     for (let id = 0; id < pop.size; id++) {
       const cx = (id % cols) * cell + cell / 2, cy = Math.floor(id / cols) * cell + cell / 2;
-      marks[id] = pop.role[id] === STAFF
-        ? svgEl('rect', { x: cx - r, y: cy - r, width: 2 * r, height: 2 * r, rx: r * 0.3 }, svg)
-        : svgEl('circle', { cx, cy, r }, svg);
+      const shape = pop.role[id] === STAFF ? 'rect' : 'circle';
+      const g = svgEl('g', { transform: `translate(${cx},${cy})` }, svg);
+      blues[id] = svgEl(shape, {}, g);
+      golds[id] = svgEl(shape, {}, g);
+      groups[id] = g;
     }
+    // One scale for both colours, set by everything in play, so sizes are
+    // comparable and don't jump as the leader changes.
+    let total = 0;
+    for (let id = 0; id < pop.size; id++) total += pop.blue[id] + pop.gold[id];
+    maxN = Math.max(1, total);
+    if (sizeKey) renderSizeKey(sizeKey, maxN);
   }
 
   function idAt(clientX, clientY) {
@@ -234,12 +281,74 @@ export function createPopulationView({ svg, wrap, tooltip, onPick }) {
     update(pop, isActive) {
       if (!current || current.pop !== pop) build(pop);
       current = { pop, isActive };
+      const { cell } = layout;
+      const ringW = Math.max(1.2, RING_WIDTH * cell);
+      let resized = false;
       for (let id = 0; id < pop.size; id++) {
-        const cls = `p-${classifyHolder(pop.blue[id], pop.gold[id])}${isActive(id) ? '' : ' out'}`;
-        if (cls !== classes[id]) { marks[id].setAttribute('class', cls); classes[id] = cls; }
+        const b = pop.blue[id], g = pop.gold[id], active = isActive(id);
+        const key = `${b},${g},${active}`;
+        if (key === keys[id]) continue;
+        keys[id] = key;
+        const square = pop.role[id] === STAFF;
+        const blue = blues[id], gold = golds[id];
+        if (b > 0 || g === 0) {
+          // Blue disk (or a small grey dot for someone holding nothing).
+          blue.setAttribute('class', b > 0 ? 'disk p-blue' : 'disk p-none');
+          setShape(blue, square, markRadius(b, maxN, cell));
+          blue.removeAttribute('visibility');
+        } else {
+          blue.setAttribute('visibility', 'hidden');
+        }
+        if (g > 0) {
+          const r = markRadius(g, maxN, cell);
+          if (b > 0) {
+            // Ring: its outer edge sits at r, so it's the same size a gold disk would be.
+            gold.setAttribute('class', 'ring');
+            gold.setAttribute('stroke-width', ringW);
+            setShape(gold, square, Math.max(ringW / 2, r - ringW / 2));
+          } else {
+            gold.setAttribute('class', 'disk p-gold');
+            gold.removeAttribute('stroke-width');
+            setShape(gold, square, r);
+          }
+          gold.removeAttribute('visibility');
+        } else {
+          gold.setAttribute('visibility', 'hidden');
+        }
+        groups[id].setAttribute('class', active ? '' : 'out');
+        resized = true;
+      }
+      // Draw bigger marks last so overlaps never hide a big holder.
+      if (resized) {
+        const size = (id) => Math.max(pop.blue[id], pop.gold[id]);
+        const big = [];
+        for (let id = 0; id < pop.size; id++) if (size(id) > 1) big.push(id);
+        big.sort((a, b) => size(a) - size(b));
+        for (const id of big) svg.appendChild(groups[id]);
       }
     },
   };
+}
+
+// A row of example marks: 1, 10, 100 … necklaces, at the grid's relative scale.
+// Blue disks and gold rings share this scale.
+function renderSizeKey(container, maxN) {
+  const vals = sizeKeyValues(maxN);
+  const cell = 22; // drawn larger than the grid so it's readable; proportions match
+  const rMax = MARK_MAX * cell;
+  const gap = 10;
+  let x = 0;
+  const items = vals.map((v) => {
+    const item = { v, r: markRadius(v, maxN, cell), cx: x + rMax };
+    x += 2 * rMax + gap + String(fmtInt(v)).length * 7;
+    return item;
+  });
+  container.textContent = '';
+  const svg = svgEl('svg', { viewBox: `0 0 ${x} ${2 * rMax + 2}`, width: x, height: 2 * rMax + 2, 'aria-hidden': 'true' }, container);
+  for (const it of items) {
+    svgEl('circle', { class: 'disk p-blue', cx: it.cx, cy: rMax + 1, r: it.r }, svg);
+    svgEl('text', { x: it.cx + rMax + 3, y: rMax + 5 }, svg).textContent = fmtInt(it.v);
+  }
 }
 
 // ---------- 3. Simulation view (charts) ----------

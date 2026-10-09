@@ -164,7 +164,7 @@
         <div class="legend">
           <span class="key"><span class="swatch dot blue"></span>Blue</span>
           <span class="key"><span class="swatch dot gold"></span>Gold</span>
-          <span class="key"><span class="swatch dot both"></span>Both</span>
+          <span class="key"><span class="swatch dot both"></span>Both (gold ring)</span>
           <span class="key"><span class="swatch dot none"></span>None</span>
           <span class="key"><span class="swatch dot shape-circle"></span>Student</span>
           <span class="key"><span class="swatch dot shape-square"></span>Teacher</span>
@@ -174,7 +174,13 @@
         <svg id="pop-chart" class="pop-chart" viewBox="0 0 800 300" role="img" aria-labelledby="popgrid-title"></svg>
         <div class="tooltip" id="pop-tooltip" hidden></div>
       </div>
-      <p class="note">One mark per person, ordered by ID: students first, then teachers in the last rows. Faded marks are out of the game.</p>
+      <div class="size-key">
+        <span class="size-key-label">Size = necklaces of that colour (log scale)</span>
+        <span id="pop-size-key"></span>
+      </div>
+      <p class="note">One mark per person, ordered by ID: students first, then teachers in the last rows. Blue necklaces are a disk and
+        gold necklaces a ring, each sized by the <em>log</em> of how many that person holds, so every doubling adds the same amount.
+        Someone with only gold is a solid gold mark. Faded marks are out of the game.</p>
     </section>
 
     <section class="chart-card" aria-labelledby="hist-title">
