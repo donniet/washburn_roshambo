@@ -126,6 +126,14 @@ const necklaceText = ({ blue, gold }) => `${blue} blue · ${gold} gold`;
 
 // ---------- 1. Roshambo match view ----------
 
+// The glyph sits in its own span so the grayscale filter doesn't touch the
+// win highlight drawn on the outer box.
+function handEl(move, cls) {
+  const outer = htmlEl('span', { class: cls, title: move, role: 'img', 'aria-label': move });
+  outer.append(htmlEl('span', { class: 'glyph', 'aria-hidden': 'true' }, moveGlyph(move)));
+  return outer;
+}
+
 // match = { rounds, winner: 0|1, coinFlip }; labels = [nameA, nameB]
 // detail (optional) = { before: [h, h], after: [h, h], moved } for necklace challenges.
 export function renderMatch(container, match, { labels = ['Player A', 'Player B'], detail = null, animate = true } = {}) {
@@ -147,9 +155,9 @@ export function renderMatch(container, match, { labels = ['Player A', 'Player B'
     const outcome = r.result > 0 ? 'beats' : r.result < 0 ? 'loses to' : 'ties';
     li.append(
       htmlEl('span', { class: 'round-n' }, `Round ${i + 1}`),
-      htmlEl('span', { class: `hand${r.result > 0 ? ' won' : ''}`, title: r.a, 'aria-label': r.a }, moveGlyph(r.a)),
+      handEl(r.a, `hand${r.result > 0 ? ' won' : ''}`),
       htmlEl('span', { class: 'outcome' }, r.result === 0 ? 'tie — replay' : outcome),
-      htmlEl('span', { class: `hand mirror${r.result < 0 ? ' won' : ''}`, title: r.b, 'aria-label': r.b }, moveGlyph(r.b)),
+      handEl(r.b, `hand mirror${r.result < 0 ? ' won' : ''}`),
       htmlEl('span', { class: 'round-score' }, `${r.scoreA}–${r.scoreB}`),
     );
     list.append(li);

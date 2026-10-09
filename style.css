@@ -21,6 +21,7 @@
   --necklace-none:  #d6d4cc;
   --role-student:   #1baf7a;
   --role-staff:     var(--text-secondary);
+  --hand-filter:    grayscale(1) brightness(0.55) contrast(1.8);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -46,6 +47,7 @@
     --necklace-none:  #3a3936;
     --role-student:   #199e70;
     --role-staff:     var(--text-secondary);
+    --hand-filter:    grayscale(1) brightness(1.1) contrast(1.2);
   }
 }
 :root[data-theme="dark"] {
@@ -71,6 +73,7 @@
   --necklace-none:  #3a3936;
   --role-student:   #199e70;
   --role-staff:     var(--text-secondary);
+  --hand-filter:    grayscale(1) brightness(1.1) contrast(1.2);
 }
 
 * { box-sizing: border-box; }
@@ -352,6 +355,9 @@ fieldset.rule legend {
   border-radius: 10px;
   border: 2px solid transparent;
 }
+/* Black-and-white hands that keep the finger detail: a grayscale filter tuned per
+   theme (dark charcoal on light, light grey on dark) via --hand-filter. */
+.glyph { filter: var(--hand-filter); }
 .hand.mirror { transform: scaleX(-1); }
 .hand.won { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .round.tie { opacity: 0.6; border-style: dashed; }

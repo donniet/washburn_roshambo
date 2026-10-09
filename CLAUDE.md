@@ -63,6 +63,11 @@ This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualize
   - `MARK_MAX = 0.75` cell caps neighbour overlap at ⅓ of a mark's width.
   - Bigger marks are re-appended so they draw on top.
   - An earlier version split one mark by area. Don't go back to it: small gold holdings disappeared under large blue ones.
+- Hand emoji are grayscale with their finger detail kept. `.glyph { filter: var(--hand-filter) }` uses a per-theme token:
+  - light: `grayscale(1) brightness(0.55) contrast(1.8)` (charcoal);
+  - dark: `grayscale(1) brightness(1.1) contrast(1.2)` (light grey).
+  - The glyph sits in an inner span (`handEl`) because a filter on `.hand` would also grey out the blue win highlight.
+  - Rejected: text-shadow silhouette (loses detail) and U+FE0E (inconsistent).
 - Histogram ("by role"): stacked bars. X = total necklaces per person in doubling bins; y = people; students on the bottom, teachers on top.
   - Segments have a 2px surface gap, and totals are labelled above each bar.
   - People holding zero necklaces are listed in the note, not drawn.
@@ -73,8 +78,14 @@ This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualize
   - Helper: `colorHistogram(pop)`.
 - Charts: SVG with a fixed `viewBox` (800 wide, margins `{24,16,56,52}`), coloured only through CSS classes. Text uses text tokens, never series colours.
 
+## Deployment
+- URL: https://difficult-tech.com/washburn_roshambo/ (next to /central_limit_dice/).
+- The header `.share` card links there, and `qr.svg` encodes it.
+- `qr.svg` was generated with segno to match the sibling exactly (version 4, error level Q, white background, viewBox, no size):
+  `segno.make(url, error='Q', micro=False).save('qr.svg', kind='svg', light='#fff', title=f'QR code: {url}', xmldecl=False, omitsize=True, nl=True)`.
+  These settings reproduce the sibling's `qr.svg` byte for byte. segno isn't installed system-wide; install it into the scratchpad with `pip install --target`.
+
 ## Open items
-- **Share/QR card:** not added yet. It needs the deploy URL slug; when known, add a `.share` card + `qr.svg` like the sibling's header.
 - **Stage 4 extras (optional):** a "compare two rule sets with the same seed" mode, and a table view of the chart data.
 - **"Show a game from this tick"** is disabled when a run ends early, because the final tick had no games.
 - **Chart text on phones:** it gets small because the viewBox scales, the same as on the sibling page.
