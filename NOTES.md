@@ -28,9 +28,14 @@ Two people compete at rock-paper-scissors, and the best 2/3 winner will receive 
 * Individuals with zero necklaces CAN challenge
 * Teachers CAN challenge each other
 * Teachers CANNOT challenge each other
+* ALLOW or DISALLOW teachers from taking any beads from students when they win
 
 # Strategies
 
 * Challenges are randomly chosen
 * (More challenges will be here in future iterations)
+
+# Data Download
+
+* Data for visualizations should be downloadable as a CSV
 

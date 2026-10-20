@@ -83,6 +83,7 @@ export function playMatch(rng, chooseA = uniformMove, chooseB = uniformMove) {
 
 export const DEFAULT_RULES = {
   transfer: 'oneRandom',
+  teachersTakeFromStudents: true,
   staffVsStudent: 'allowed',
   staffVsStaff: 'allowed',
   zeroNecklaces: 'out',
@@ -92,6 +93,7 @@ export const DEFAULT_RULES = {
 
 // Labels for every rule variation. The UI builds its radio groups from this,
 // so a new variation only needs an entry here plus handling below.
+// A group may also carry `toggles`: on/off rules shown as checkboxes under its radios.
 export const RULE_OPTIONS = {
   transfer: {
     label: 'What the winner takes',
@@ -100,6 +102,10 @@ export const RULE_OPTIONS = {
       { value: 'oneRandom', label: 'One necklace, chosen at random' },
       { value: 'goldFirst', label: 'One gold necklace, or blue if they have none' },
       { value: 'blueFirst', label: 'One blue necklace, or gold if they have none' },
+    ],
+    toggles: [
+      { key: 'teachersTakeFromStudents', label: 'Teachers may take necklaces from students',
+        note: 'Unchecked: when a teacher beats a student, nothing changes hands. Students can still win necklaces from teachers.' },
     ],
   },
   staffVsStudent: {
@@ -126,12 +132,11 @@ export const RULE_OPTIONS = {
   },
   declining: {
     label: 'Declining a challenge',
-    note: 'Teachers always accept. A decline uses up the time slot for both people, and nobody’s necklaces change.',
+    note: 'Teachers always accept. A decline uses up the time slot for both people, and nobody’s necklaces change. '
+      + 'When declining is allowed, the strategy decides when a student declines.',
     options: [
-      { value: 'never', label: 'No declines: every challenge is played' },
-      { value: 'ifFewer', label: 'A student with FEWER necklaces than the challenger may decline' },
-      { value: 'ifMore', label: 'A student with MORE necklaces than the challenger may decline' },
-      { value: 'always', label: 'A student may always decline' },
+      { value: 'never', label: 'NOT allowed: every challenge is played' },
+      { value: 'allowed', label: 'Students MAY decline a challenge' },
     ],
   },
 };
@@ -237,18 +242,11 @@ export function challengeError(pop, challenger, target, rules) {
 }
 
 // Why `target` may not decline a (legal) challenge from `challenger`, or null if they may.
-// Teachers always accept; for students it depends on the declining rule and on
-// who holds more necklaces ("points"). Equal counts are neither fewer nor more.
+// The rule only says whether students may decline at all; *when* they do is up to
+// the strategy. Teachers always accept.
 export function declineError(pop, challenger, target, rules) {
   if (pop.role[target] === STAFF) return 'Teachers always accept challenges';
-  const mine = necklaceCount(pop, target), theirs = necklaceCount(pop, challenger);
-  switch (rules.declining) {
-    case 'always': return null;
-    case 'ifFewer': return mine < theirs ? null : 'Only a student with fewer necklaces than the challenger may decline';
-    case 'ifMore': return mine > theirs ? null : 'Only a student with more necklaces than the challenger may decline';
-    case 'never':
-    default: return 'Declining isn’t allowed';
-  }
+  return rules.declining === 'allowed' ? null : 'Declining isn’t allowed';
 }
 
 export const canDecline = (pop, challenger, target, rules) =>
@@ -258,10 +256,19 @@ export const canChallenge = (pop, challenger, target, rules) =>
   challengeError(pop, challenger, target, rules) === null;
 
 // Move necklaces from loser to winner per the transfer rule. Returns what moved.
+// The engine's single place for "who keeps what": returns null if the winner may take
+// from the loser, or why not.
+export function transferBlocked(pop, winner, loser, rules) {
+  if (rules.teachersTakeFromStudents === false && pop.role[winner] === STAFF && pop.role[loser] === STUDENT) {
+    return 'teachersCantTake';
+  }
+  return null;
+}
+
 export function transfer(pop, winner, loser, rules, rng) {
   const b = pop.blue[loser], g = pop.gold[loser];
   let moved;
-  if (b + g === 0) moved = { blue: 0, gold: 0 };
+  if (b + g === 0 || transferBlocked(pop, winner, loser, rules)) moved = { blue: 0, gold: 0 };
   else switch (rules.transfer) {
     case 'all': moved = { blue: b, gold: g }; break;
     case 'oneRandom': moved = rng.int(b + g) < g ? { blue: 0, gold: 1 } : { blue: 1, gold: 0 }; break;
@@ -307,6 +314,7 @@ export function resolveChallenge(state, challenger, target, { chooseA, chooseB, 
   const match = playMatch(rng, chooseA, chooseB);
   const winner = match.winner === 0 ? challenger : target;
   const loser = match.winner === 0 ? target : challenger;
+  const blocked = transferBlocked(pop, winner, loser, rules);
   const moved = transfer(pop, winner, loser, rules, rng);
   pop.gamesPlayed[challenger]++;
   pop.gamesPlayed[target]++;
@@ -314,7 +322,7 @@ export function resolveChallenge(state, challenger, target, { chooseA, chooseB, 
   pop.slotsUsed[target]++;
   return {
     ok: true, outcome: 'played', challenger, target, winner, loser,
-    rounds: match.rounds, coinFlip: match.coinFlip, moved,
+    rounds: match.rounds, coinFlip: match.coinFlip, moved, blocked,
     before, after: [holdings(pop, challenger), holdings(pop, target)],
   };
 }

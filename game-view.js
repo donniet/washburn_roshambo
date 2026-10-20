@@ -225,7 +225,9 @@ export function renderMatch(container, match, { labels = ['Player A', 'Player B'
     if (moved.gold) parts.push(`${moved.gold} gold`);
     if (moved.blue) parts.push(`${moved.blue} blue`);
     result.append(htmlEl('div', { class: 'moved' },
-      parts.length ? `takes ${parts.join(' + ')} necklace${moved.blue + moved.gold > 1 ? 's' : ''}` : 'but the loser had nothing to give'));
+      parts.length ? `takes ${parts.join(' + ')} necklace${moved.blue + moved.gold > 1 ? 's' : ''}`
+        : detail.blocked === 'teachersCantTake' ? 'but teachers can’t take necklaces from students, so nothing changes hands'
+          : 'but the loser had nothing to give'));
     const table = htmlEl('div', { class: 'before-after' });
     [0, 1].forEach((side) => {
       table.append(htmlEl('span', { class: 'ba-name' }, labels[side]),
@@ -801,3 +803,72 @@ export function fmtClock(tick, secondsPerTick = 5) {
   const s = tick * secondsPerTick;
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+
+// ---------- CSV downloads ----------
+// Each builder returns the data behind one card as rows (first row = header);
+// `toCsv` turns rows into CSV text.
+
+// RFC 4180 quoting: wrap a field in quotes if it holds a comma, quote or line break.
+export function toCsv(rows) {
+  const field = (v) => {
+    const t = v == null ? '' : String(v);
+    return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  return rows.map((r) => r.map(field).join(',')).join('\r\n') + '\r\n';
+}
+
+const round = (v, places = 2) => +v.toFixed(places);
+
+// Everyone at Washburn: one row per person; Person is 1-based.
+export function populationRows(pop) {
+  const rows = [['Person', 'Role', 'Blue_Necklaces', 'Gold_Necklaces']];
+  for (let id = 0; id < pop.size; id++) {
+    rows.push([id + 1, pop.role[id] === STAFF ? 'Teacher' : 'Student', pop.blue[id], pop.gold[id]]);
+  }
+  return rows;
+}
+
+// By role: the stacked bars.
+export function roleHistogramRows(pop) {
+  const { edges, students, staff } = roleHistogram(pop);
+  const rows = [['Necklaces_Held', 'Bin_Min', 'Bin_Max', 'Students', 'Teachers', 'Total']];
+  students.forEach((s, i) => rows.push([binLabel(edges[i], edges[i + 1]), edges[i], edges[i + 1] - 1, s, staff[i], s + staff[i]]));
+  return rows;
+}
+
+// By colour: the grouped bars (people holding none of a colour aren't drawn, so they aren't listed).
+export function colorHistogramRows(pop) {
+  const { edges, blue, gold } = colorHistogram(pop);
+  const rows = [['Necklaces_Of_One_Colour', 'Bin_Min', 'Bin_Max', 'People_Holding_That_Many_Blue', 'People_Holding_That_Many_Gold']];
+  blue.forEach((b, i) => rows.push([binLabel(edges[i], edges[i + 1]), edges[i], edges[i + 1] - 1, b, gold[i]]));
+  return rows;
+}
+
+// Over time: one row per tick, the plotted percentages plus the counts behind them.
+export function trendRows(history) {
+  const rows = [[
+    'Tick', 'Time',
+    'Gold_Held_By_Students_Pct', 'Blue_Held_By_Teachers_Pct', 'People_With_No_Necklaces_Pct', 'Challenges_Declined_Pct',
+    'Student_Gold', 'Total_Gold', 'Teacher_Blue', 'Total_Blue', 'People_With_No_Necklaces', 'People',
+    'Games_Played', 'Challenges_Declined', 'Still_Playing',
+  ]];
+  for (const h of history) {
+    rows.push([
+      h.tick, fmtClock(h.tick), ...TREND_SERIES.map((s) => round(s.value(h))),
+      h.studentGold, h.gold, h.staffBlue, h.blue, h.empty, h.active + h.out,
+      h.games || 0, h.declined || 0, h.active,
+    ]);
+  }
+  return rows;
+}
+
+// Does declining pay off?: one row per decline-rate group.
+export function declineRows(pop) {
+  const { bins } = declinePayoff(pop);
+  const rows = [['Decline_Rate', 'Students', 'Average_Necklaces', 'Average_Chances_To_Decline', 'Pct_Holding_None']];
+  for (const b of bins) rows.push([b.label, b.people, round(b.avg), round(b.avgChances), round(b.emptyPct)]);
+  return rows;
+}
+
+// A file-name-safe slug: "Monday rules!" → "monday-rules".
+export const slug = (v) => String(v).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'run';

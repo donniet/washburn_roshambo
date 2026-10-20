@@ -16,12 +16,13 @@ test('readConfig: empty form gives the defaults', () => {
 test('readConfig: reads form strings', () => {
   const c = readConfig({
     numStudents: '500', numStaff: '40', numBlue: '250', numGold: '40', maxGamesPerPerson: '60',
-    transfer: 'all', staffVsStudent: 'never', staffVsStaff: 'never', zeroNecklaces: 'canChallenge', declining: 'ifFewer',
+    transfer: 'all', staffVsStudent: 'never', staffVsStaff: 'never', zeroNecklaces: 'canChallenge', declining: 'allowed',
     strategyId: 'random', 'param:participation': '0.5', 'param:declineRate': '0.25', seed: '1234',
   });
   assert.deepEqual(c.cfg, { numStudents: 500, numStaff: 40, numBlue: 250, numGold: 40 });
   assert.deepEqual(c.rules, {
-    transfer: 'all', staffVsStudent: 'never', staffVsStaff: 'never', zeroNecklaces: 'canChallenge', declining: 'ifFewer', maxGamesPerPerson: 60,
+    transfer: 'all', teachersTakeFromStudents: true, staffVsStudent: 'never', staffVsStaff: 'never',
+    zeroNecklaces: 'canChallenge', declining: 'allowed', maxGamesPerPerson: 60,
   });
   assert.equal(c.params.participation, 0.5);
   assert.equal(c.params.declineRate, 0.25);
@@ -65,4 +66,11 @@ test('endMessage explains why a run finished', () => {
   assert.match(msg, /CAN still challenge/);
   const time = createSimulation({ cfg, rules: { maxGamesPerPerson: 3 }, seed: 1 }).run();
   assert.equal(endMessage(time), 'Finished: everyone used their 3 time slots.');
+});
+
+test('readConfig: rule checkboxes arrive as yes / no; anything else keeps the default', () => {
+  assert.equal(readConfig({ teachersTakeFromStudents: 'no' }).rules.teachersTakeFromStudents, false);
+  assert.equal(readConfig({ teachersTakeFromStudents: 'yes' }).rules.teachersTakeFromStudents, true);
+  assert.equal(readConfig({ teachersTakeFromStudents: 'maybe' }).rules.teachersTakeFromStudents, true);
+  assert.equal(readConfig({}).rules.teachersTakeFromStudents, true);
 });

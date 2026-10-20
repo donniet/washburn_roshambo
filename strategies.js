@@ -16,6 +16,8 @@ const registry = new Map();
 //   id, name, description,
 //   params: [{ key, label, type: 'range' | 'number', min, max, step, default }
 //            | { key, label, type: 'select', options: [{ value, label }], default }],
+//            Any param may add enabledWhen(rules) => boolean, plus disabledHint, to grey
+//            out its control when the current rules make it irrelevant.
 //   create(params) => {
 //     init?(ctx),
 //     selectPairs(ctx) => [[challengerId, targetId], ...],   // disjoint within a tick
@@ -47,6 +49,12 @@ export function defaultParams(def) {
 }
 
 export const DEFAULT_STRATEGY = 'classroom';
+
+// Whether a param's control should be enabled under these rules.
+export const paramEnabled = (param, rules) => (param.enabledWhen ? !!param.enabledWhen(rules) : true);
+
+const declinesAllowed = (rules) => rules.declining === 'allowed';
+const DECLINE_HINT = 'Turn on “Students MAY decline” in the Rules to use this.';
 
 // ---------- Built-in strategies ----------
 
@@ -99,6 +107,7 @@ registerStrategy({
         { value: 'lowest', label: 'Challenge the LOWEST scorer (above 0) they can' },
       ] },
     { key: 'declineBy', label: 'When they decline', type: 'select', default: 'never',
+      enabledWhen: declinesAllowed, disabledHint: DECLINE_HINT,
       options: [
         { value: 'never', label: 'Never decline' },
         { value: 'ifMore', label: 'Decline if allowed and the challenger has MORE necklaces' },
@@ -150,6 +159,7 @@ registerStrategy({
     { key: 'participation', label: 'Chance a free person looks for a game each tick',
       type: 'range', min: 0.05, max: 1, step: 0.05, default: 1 },
     { key: 'declineRate', label: 'Chance a student declines, when the rules allow it',
+      enabledWhen: declinesAllowed, disabledHint: DECLINE_HINT,
       type: 'range', min: 0, max: 1, step: 0.05, default: 0.5 },
   ],
   create({ participation = 1, declineRate = 0.5 } = {}) {

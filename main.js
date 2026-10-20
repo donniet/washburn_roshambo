@@ -5,10 +5,11 @@ import {
   challengeError, declineError,
 } from './game.js';
 import {
-  createSimulation, listStrategies, getStrategy, defaultParams, summarize, DEFAULT_STRATEGY,
+  createSimulation, listStrategies, getStrategy, defaultParams, summarize, DEFAULT_STRATEGY, paramEnabled,
 } from './strategies.js';
 import {
-  renderMatch, renderDecline, createPopulationView, createDeclineView, createHistogramView, createColorHistogramView, createTrendView,
+  renderMatch, renderDecline, createPopulationView, createDeclineView,
+  toCsv, populationRows, roleHistogramRows, colorHistogramRows, trendRows, declineRows, slug, createHistogramView, createColorHistogramView, createTrendView,
   personLabel, fmtInt, fmtPct, pct, fmtClock,
 } from './game-view.js';
 
@@ -38,8 +39,13 @@ export function readConfig(values = {}) {
   if (cfg.numStudents + cfg.numStaff === 0) cfg.numStudents = 1;
 
   const rules = { ...DEFAULT_RULES };
-  for (const [key, { options }] of Object.entries(RULE_OPTIONS)) {
+  for (const [key, { options, toggles = [] }] of Object.entries(RULE_OPTIONS)) {
     if (options.some((o) => o.value === values[key])) rules[key] = values[key];
+    // Checkboxes arrive as 'yes' / 'no' (see formValues); anything else keeps the default.
+    for (const t of toggles) {
+      if (values[t.key] === 'yes') rules[t.key] = true;
+      else if (values[t.key] === 'no') rules[t.key] = false;
+    }
   }
   rules.maxGamesPerPerson = clampInt(values.maxGamesPerPerson, LIMITS.maxGamesPerPerson, DEFAULT_RULES.maxGamesPerPerson);
 
@@ -98,6 +104,18 @@ function init() {
       label.innerHTML = `<input type="radio" name="${key}" value="${o.value}"${o.value === DEFAULT_RULES[key] ? ' checked' : ''}> <span>${o.label}</span>`;
       fs.append(label);
     }
+    for (const t of group.toggles || []) {
+      const label = document.createElement('label');
+      label.className = 'radio rule-toggle';
+      label.innerHTML = `<input type="checkbox" name="${t.key}"${DEFAULT_RULES[t.key] ? ' checked' : ''}> <span>${t.label}</span>`;
+      fs.append(label);
+      if (t.note) {
+        const note = document.createElement('p');
+        note.className = 'rule-note';
+        note.textContent = t.note;
+        fs.append(note);
+      }
+    }
     if (group.note) {
       const note = document.createElement('p');
       note.className = 'rule-note';
@@ -133,10 +151,31 @@ function init() {
         wrap.innerHTML = `<label for="${id}">${p.label}</label>
           <input type="number" id="${id}" name="param:${p.key}" min="${p.min}" max="${p.max}" step="${p.step ?? 1}" value="${p.default}">`;
       }
+      if (p.enabledWhen) {
+        wrap.dataset.param = p.key;
+        const hint = document.createElement('p');
+        hint.className = 'param-hint';
+        hint.textContent = p.disabledHint || 'Not used under the current rules.';
+        wrap.append(hint);
+      }
       box.append(wrap);
     }
   }
   buildParams();
+
+  // Grey out strategy settings the current rules make irrelevant (e.g. decline options
+  // when declining isn't allowed). Disabled controls keep their value for later.
+  function updateParamStates() {
+    const def = getStrategy(stratSel.value);
+    const { rules } = readConfig(formValues());
+    for (const p of def.params) {
+      if (!p.enabledWhen) continue;
+      const wrap = $('strategy-params').querySelector(`[data-param="${p.key}"]`);
+      const on = paramEnabled(p, rules);
+      wrap.classList.toggle('disabled', !on);
+      for (const input of wrap.querySelectorAll('input, select')) input.disabled = !on;
+    }
+  }
   stratSel.addEventListener('change', buildParams);
 
   // Views
@@ -161,12 +200,17 @@ function init() {
   function formValues() {
     const fd = new FormData(form);
     const v = Object.fromEntries(fd.entries());
+    // Unchecked boxes are missing from FormData, so spell every toggle out.
+    for (const group of Object.values(RULE_OPTIONS)) {
+      for (const t of group.toggles || []) v[t.key] = form.elements[t.key].checked ? 'yes' : 'no';
+    }
     v.strategyId = stratSel.value;
     return v;
   }
 
   function reset() {
     stop();
+    updateParamStates();
     const conf = readConfig(formValues());
     sim = createSimulation(conf);
     $('max-ticks').textContent = fmtInt(sim.maxTicks);
@@ -296,6 +340,32 @@ function init() {
     if (evs.length) showEvent(evs[practiceRng.int(evs.length)]);
     document.getElementById('match-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+
+  // ---------- CSV downloads ----------
+  // Each link builds its file from the current run when clicked.
+  const CSV_SOURCES = {
+    everyone: () => populationRows(sim.state.pop),
+    'by-role': () => roleHistogramRows(sim.state.pop),
+    'by-colour': () => colorHistogramRows(sim.state.pop),
+    'over-time': () => trendRows(sim.history),
+    declining: () => declineRows(sim.state.pop),
+  };
+  for (const link of document.querySelectorAll('a.csv-link')) {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const key = link.dataset.csv;
+      // UTF-8 byte-order mark so Excel reads the en dashes in bin labels correctly.
+      const blob = new Blob(['\ufeff' + toCsv(CSV_SOURCES[key]())], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `washburn-roshambo_${key}_seed-${slug(sim.state.seed)}_tick-${sim.tick}.csv`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  }
 
   reset();
   renderMatch(matchBox, playMatch(practiceRng), { labels: ['Player A', 'Player B'], animate: false });

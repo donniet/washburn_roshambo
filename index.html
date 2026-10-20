@@ -167,7 +167,10 @@
 
     <section class="chart-card" aria-labelledby="popgrid-title">
       <div class="chart-head">
-        <h2 id="popgrid-title">Everyone at Washburn</h2>
+        <div class="chart-title">
+          <h2 id="popgrid-title">Everyone at Washburn</h2>
+          <a class="csv-link" href="#" data-csv="everyone" title="Download the data behind this chart as a CSV file">⤓ CSV</a>
+        </div>
         <div class="legend">
           <span class="key"><span class="swatch dot blue"></span>Blue</span>
           <span class="key"><span class="swatch dot gold"></span>Gold</span>
@@ -192,7 +195,10 @@
 
     <section class="chart-card" aria-labelledby="hist-title">
       <div class="chart-head">
-        <h2 id="hist-title">How many necklaces each person holds, by role</h2>
+        <div class="chart-title">
+          <h2 id="hist-title">How many necklaces each person holds, by role</h2>
+          <a class="csv-link" href="#" data-csv="by-role" title="Download the data behind this chart as a CSV file">⤓ CSV</a>
+        </div>
         <div class="legend">
           <span class="key"><span class="swatch student"></span>Students</span>
           <span class="key"><span class="swatch staff"></span>Teachers</span>
@@ -207,7 +213,10 @@
 
     <section class="chart-card" aria-labelledby="color-title">
       <div class="chart-head">
-        <h2 id="color-title">How many necklaces each person holds, by colour</h2>
+        <div class="chart-title">
+          <h2 id="color-title">How many necklaces each person holds, by colour</h2>
+          <a class="csv-link" href="#" data-csv="by-colour" title="Download the data behind this chart as a CSV file">⤓ CSV</a>
+        </div>
         <div class="legend">
           <span class="key"><span class="swatch blue"></span>Blue necklaces</span>
           <span class="key"><span class="swatch gold"></span>Gold necklaces</span>
@@ -222,7 +231,10 @@
 
     <section class="chart-card" aria-labelledby="trend-title">
       <div class="chart-head">
-        <h2 id="trend-title">Over time</h2>
+        <div class="chart-title">
+          <h2 id="trend-title">Over time</h2>
+          <a class="csv-link" href="#" data-csv="over-time" title="Download the data behind this chart as a CSV file">⤓ CSV</a>
+        </div>
         <div class="legend">
           <span class="key"><span class="swatch line gold"></span>Gold held by students</span>
           <span class="key"><span class="swatch line blue"></span>Blue held by teachers</span>
@@ -238,7 +250,10 @@
 
     <section class="chart-card" aria-labelledby="decline-title">
       <div class="chart-head">
-        <h2 id="decline-title">Does declining pay off?</h2>
+        <div class="chart-title">
+          <h2 id="decline-title">Does declining pay off?</h2>
+          <a class="csv-link" href="#" data-csv="declining" title="Download the data behind this chart as a CSV file">⤓ CSV</a>
+        </div>
         <span class="legend"><span class="key"><span class="swatch student"></span>Average necklaces held by students</span></span>
       </div>
       <div class="chart-wrap" id="decline-wrap">
@@ -253,9 +268,10 @@
       <ul>
         <li><strong>Winner takes all:</strong> how fast do the necklaces pile up on a few people? How many people end up with nothing?</li>
         <li><strong>Gold first vs. blue first:</strong> which rule moves gold necklaces into students' hands faster?</li>
+        <li><strong>Teachers can't take from students:</strong> uncheck the box under "What the winner takes". Do the gold necklaces end up with students faster?</li>
         <li><strong>Teachers can't challenge students:</strong> does it protect students, or teachers?</li>
         <li><strong>Zero necklaces can still challenge:</strong> people with nothing to lose keep playing. What does that do to the big winners?</li>
-        <li><strong>Declining:</strong> let students with fewer necklaces decline. In "Does declining pay off?", do students who decline more of their chances hold on to more necklaces? Compare with "students with more necklaces may decline". With the random strategy, everyone declines at the same rate on average, so the bars should look about level.</li>
+        <li><strong>Declining:</strong> allow declines in the rules, then compare the strategy's decline options: never, when the challenger has MORE necklaces, when they have LESS, or a coin flip. Keep the seed the same. Which one leaves students holding more necklaces?</li>
         <li>Keep the same seed and change one rule at a time, so the only difference is the rule.</li>
       </ul>
     </details>
@@ -267,8 +283,11 @@
         <li>A challenge is <em>directed</em>: the challenger picks a target. The target must have at least one necklace to lose.</li>
         <li>"Teachers CANNOT challenge students" still lets a student challenge a teacher. Pick "never play each other" to keep them apart completely.</li>
         <li>If someone with no necklaces challenges and loses, nothing changes hands.</li>
-        <li>Under a declining rule, a student may refuse a challenge. The refusal still uses up that 5-second slot for both people, so it
-          counts toward "Time slots per person". Teachers always accept. "Fewer" and "more" compare total necklaces; a tie means no decline.</li>
+        <li>With "Teachers may take necklaces from students" unchecked, a teacher who beats a student takes nothing. The game still
+          counts and uses the time slot. Students can still win necklaces from teachers.</li>
+        <li>When the rules allow declining, a student may refuse a challenge, and the strategy decides when. The refusal still uses up
+          that 5-second slot for both people, so it counts toward "Time slots per person". Teachers always accept. "More" and "less"
+          compare total necklaces; a tie means no decline.</li>
         <li>Any setup change starts a new run. The same seed and settings always give the same result.</li>
       </ul>
     </details>

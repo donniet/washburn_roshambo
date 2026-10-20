@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { STAFF, STUDENT, totals, canChallenge } from './game.js';
 import {
   createSimulation, registerStrategy, listStrategies, getStrategy, defaultParams,
-  sampleGroup, CHALLENGE_PICKERS, DECLINE_CHOICES, DEFAULT_STRATEGY,
+  sampleGroup, CHALLENGE_PICKERS, DECLINE_CHOICES, DEFAULT_STRATEGY, paramEnabled,
 } from './strategies.js';
 import { createRng, createGameState, isActive, canDecline, necklaceCount } from './game.js';
 
@@ -13,10 +13,10 @@ const RULE_SETS = [];
 for (const transfer of ['all', 'oneRandom', 'goldFirst', 'blueFirst'])
   for (const staffVsStudent of ['allowed', 'studentsMayChallengeStaff', 'never'])
     for (const zeroNecklaces of ['out', 'canChallenge'])
-      for (const declining of ['never', 'ifFewer'])
+      for (const declining of ['never', 'allowed'])
         RULE_SETS.push({ transfer, staffVsStudent, zeroNecklaces, declining, maxGamesPerPerson: 40 });
-RULE_SETS.push({ transfer: 'oneRandom', staffVsStaff: 'never', declining: 'always', maxGamesPerPerson: 40 });
-RULE_SETS.push({ transfer: 'all', declining: 'ifMore', maxGamesPerPerson: 40 });
+RULE_SETS.push({ transfer: 'oneRandom', staffVsStaff: 'never', declining: 'allowed', maxGamesPerPerson: 40 });
+RULE_SETS.push({ transfer: 'all', declining: 'allowed', zeroNecklaces: 'canChallenge', maxGamesPerPerson: 40 });
 
 test('registry: random strategy is built in', () => {
   const def = getStrategy('random');
@@ -147,7 +147,7 @@ test('scheduler: maxGamesPerPerson bounds the number of ticks', () => {
 
 test('scheduler: declines are counted, legal, and use slots without moving necklaces', () => {
   const sim = createSimulation({
-    cfg: SMALL, rules: { declining: 'always', maxGamesPerPerson: 30 }, strategyId: 'random', params: { declineRate: 0.5 }, seed: 8,
+    cfg: SMALL, rules: { declining: 'allowed', maxGamesPerPerson: 30 }, strategyId: 'random', params: { declineRate: 0.5 }, seed: 8,
   });
   const before = totals(sim.state.pop);
   let declined = 0, played = 0;
@@ -180,9 +180,9 @@ test('scheduler: declines are counted, legal, and use slots without moving neckl
 });
 
 test('scheduler: declineRate 0 never declines; teachers never decline', () => {
-  const none = createSimulation({ cfg: SMALL, rules: { declining: 'always', maxGamesPerPerson: 10 }, strategyId: 'random', params: { declineRate: 0 }, seed: 9 }).run();
+  const none = createSimulation({ cfg: SMALL, rules: { declining: 'allowed', maxGamesPerPerson: 10 }, strategyId: 'random', params: { declineRate: 0 }, seed: 9 }).run();
   assert.equal(none.history.reduce((a, h) => a + h.declined, 0), 0);
-  const all = createSimulation({ cfg: SMALL, rules: { declining: 'always', maxGamesPerPerson: 10 }, strategyId: 'random', params: { declineRate: 1 }, seed: 9 }).run();
+  const all = createSimulation({ cfg: SMALL, rules: { declining: 'allowed', maxGamesPerPerson: 10 }, strategyId: 'random', params: { declineRate: 1 }, seed: 9 }).run();
   const { pop } = all.state;
   for (let id = 0; id < pop.size; id++) if (pop.role[id] === STAFF) assert.equal(pop.declines[id], 0);
   // with everyone declining, only challenges against teachers get played
@@ -199,7 +199,7 @@ test('scheduler: strategy respond is only asked when declining is possible', () 
       respond: (ctx, c, t) => { asked++; assert.ok(ctx.canDecline(c, t)); return 'decline'; },
     }),
   });
-  const sim = createSimulation({ cfg: SMALL, rules: { declining: 'always' }, strategyId: 'test-respond', seed: 10 });
+  const sim = createSimulation({ cfg: SMALL, rules: { declining: 'allowed' }, strategyId: 'test-respond', seed: 10 });
   const evs = sim.step();
   assert.equal(asked, 1);
   assert.deepEqual(evs.map((e) => e.outcome), ['declined', 'played']);
@@ -302,12 +302,12 @@ test('classroom: decline options', () => {
 
 test('classroom: declines follow the decline option during a run', () => {
   const run = (declineBy) => createSimulation({
-    cfg: SMALL, rules: { declining: 'always', maxGamesPerPerson: 20 }, params: { declineBy }, seed: 12,
+    cfg: SMALL, rules: { declining: 'allowed', maxGamesPerPerson: 20 }, params: { declineBy }, seed: 12,
   }).run();
   const count = (sim) => sim.history.reduce((a, h) => a + h.declined, 0);
   assert.equal(count(run('never')), 0);
   assert.ok(count(run('coin')) > 0);
-  const sim = createSimulation({ cfg: SMALL, rules: { declining: 'always' }, params: { declineBy: 'ifMore' }, seed: 13 });
+  const sim = createSimulation({ cfg: SMALL, rules: { declining: 'allowed' }, params: { declineBy: 'ifMore' }, seed: 13 });
   for (let t = 0; t < 10; t++) {
     const { pop } = sim.state;
     const n = Int32Array.from(pop.blue, (b, id) => b + pop.gold[id]); // before the tick
@@ -336,7 +336,42 @@ test('scheduler: endReason says why a run stopped', () => {
 });
 
 test('scheduler: with zero-necklace players allowed, winner-takes-all runs to the time limit', () => {
-  const sim = createSimulation({ cfg: SMALL, rules: { transfer: 'all', zeroNecklaces: 'canChallenge', declining: 'ifFewer', maxGamesPerPerson: 200 }, seed: 18 }).run();
+  const sim = createSimulation({ cfg: SMALL, rules: { transfer: 'all', zeroNecklaces: 'canChallenge', declining: 'allowed', maxGamesPerPerson: 200 }, seed: 18 }).run();
   assert.equal(sim.tick, 200);
   assert.deepEqual(sim.endReason, { reason: 'time' });
+});
+
+test('decline settings are only enabled when the rules allow declining', () => {
+  for (const id of ['classroom', 'random']) {
+    const def = getStrategy(id);
+    const decline = def.params.find((p) => p.key === 'declineBy' || p.key === 'declineRate');
+    assert.equal(paramEnabled(decline, { declining: 'never' }), false, id);
+    assert.equal(paramEnabled(decline, { declining: 'allowed' }), true, id);
+    assert.ok(decline.disabledHint);
+    for (const p of def.params.filter((q) => q !== decline)) {
+      assert.equal(paramEnabled(p, { declining: 'never' }), true, `${id}.${p.key} always on`);
+    }
+  }
+});
+
+test('scheduler: with teachers unable to take from students, students never lose to teachers', () => {
+  const sim = createSimulation({
+    cfg: SMALL, rules: { teachersTakeFromStudents: false, maxGamesPerPerson: 60 }, seed: 19,
+  });
+  const before = totals(sim.state.pop);
+  let teacherWinsOverStudents = 0;
+  while (!sim.done) {
+    for (const e of sim.step()) {
+      const { pop } = sim.state;
+      if (e.outcome === 'played' && pop.role[e.winner] === STAFF && pop.role[e.loser] === STUDENT) {
+        teacherWinsOverStudents++;
+        assert.deepEqual(e.moved, { blue: 0, gold: 0 });
+      }
+    }
+  }
+  assert.ok(teacherWinsOverStudents > 0);
+  const after = totals(sim.state.pop);
+  assert.equal(after.blue, before.blue);
+  assert.equal(after.gold, before.gold);
+  assert.equal(after.staffBlue, 0, 'teachers never got any blue from students');
 });

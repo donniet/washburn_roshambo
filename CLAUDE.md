@@ -9,6 +9,7 @@ Plain HTML/CSS/SVG/JS: ES modules, no build step, no dependencies.
 - **Test:** `npm test` (= `node --test`, needs Node 20+).
   - Node isn't installed on this machine. To test here, run the `*.test.js` files in headless Chrome (`google-chrome --headless=new --dump-dom …`).
   - That needs a runner page with an import map pointing `node:test` and `node:assert/strict` at small shims. Keep the runner and shims in the scratchpad, not in the repo.
+  - The scratchpad can be wiped between sessions, so be ready to recreate the harness. Give every helper page `<meta charset="utf-8">`, or curly quotes in the app's text won't match.
 
 ## Files
 Keep the JS in these four files (the user asked for few files); each has a sibling `*.test.js`.
@@ -31,10 +32,14 @@ Dependencies go one way: `main.js` → `game-view.js` / `strategies.js` → `gam
 - **Dealing necklaces:** if there are fewer necklaces than people, they go to a random (seeded) subset of the group. Extras are dealt randomly within the group. An empty group gets none.
 - **Rule variations** (in `RULE_OPTIONS`; the UI builds its radio groups from it):
   - `transfer`: `all` | `oneRandom` (default; weighted by the loser's counts) | `goldFirst` | `blueFirst`;
+  - `teachersTakeFromStudents`: boolean, default `true`. It's a checkbox under "What the winner takes", declared as a `toggles` entry on the `transfer` group.
+    - When `false`, a teacher who beats a student takes nothing: `transferBlocked` → `'teachersCantTake'`, and the event carries `blocked`. The game still counts and uses the slot.
+    - Students can still take from teachers (confirmed with the user).
+    - Checkboxes reach `readConfig` as `'yes'`/`'no'`, because `formValues` spells them out (unchecked boxes are missing from `FormData`). Any other value keeps the default.
   - `staffVsStudent`: `allowed` | `studentsMayChallengeStaff` | `never`. Challenges are *directed*;
   - `staffVsStaff`: `allowed` | `never`;
   - `zeroNecklaces`: `out` | `canChallenge`;
-  - `declining`: `never` (default) | `ifFewer` | `ifMore` | `always`. The group has a `note` that the UI shows under it;
+  - `declining`: `never` (default) | `allowed`. This is permission only; the strategy decides *when* a student declines. The group has a `note` that the UI shows under it;
   - `maxGamesPerPerson`: shown in the UI as "Time slots per person", default **300**. 25 min ÷ 5 s = 300; NOTES.md's "1500" was an arithmetic slip.
 - **Decisions confirmed with the user:**
   - The winner takes from the loser.
@@ -43,7 +48,8 @@ Dependencies go one way: `main.js` → `game-view.js` / `strategies.js` → `gam
   - A zero-necklace challenger who loses gives nothing.
 - **Declines** (confirmed with the user):
   - Only students may decline; teachers always accept.
-  - "Fewer/more" compares total necklaces, strictly, so a tie means no decline.
+  - The rule is allowed/not allowed; the conditions (challenger has MORE/LESS, coin flip) live in the strategy's `declineBy` and compare total necklaces strictly, so a tie means no decline.
+  - The user asked for this split. An earlier version had fewer/more conditions in the rule too, which duplicated the strategy.
   - A decline uses one time slot for both people and moves nothing. There's no limit on declines; their effect is shown in charts instead.
   - `declineError`/`canDecline` decide whether a decline is allowed.
   - `resolveChallenge(state, c, t, { respond })` returns one of three results: `ok: false` (not allowed), `outcome: 'declined'` or `outcome: 'played'`.
@@ -66,6 +72,9 @@ Dependencies go one way: `main.js` → `game-view.js` / `strategies.js` → `gam
 - The scheduler re-validates every proposed pair: pairs must be disjoint and pass `canChallenge`. Rejected pairs are counted in `history[].rejected`.
 - `moveChooser(rng, history, personId, side)` is the hook for biased or adaptive RPS play.
 - Param types: `range`, `number` and `select` (`options: [{ value, label }]`). `main.js` builds the matching control, and `readConfig` validates each type.
+- Any param may set `enabledWhen(rules)` + `disabledHint`.
+  - `main.js` (`updateParamStates`, run on every reset) greys it out and shows the hint when it's irrelevant. Disabled controls keep their value, and `FormData` skips them, so the default is used.
+  - Both decline settings (`classroom.declineBy`, `random.declineRate`) are enabled only when `rules.declining === 'allowed'`.
 - `classroom`, "Students choose from a classroom", is the default (`DEFAULT_STRATEGY`). A strategy is a combination of two options:
   - `challengeBy`: `random` | `highest` | `lowest`;
   - `declineBy`: `never` | `ifMore` | `ifLess` | `coin`;
@@ -122,6 +131,15 @@ This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualize
   - Stacked segments must use cumulative values with `y()` (never scale segment heights separately), or they distort across the break.
   - Every bar carries its value label, because heights aren't comparable across the break.
 - Charts: SVG with a fixed `viewBox` (800 wide, margins `{24,16,56,52}`), coloured only through CSS classes. Text uses text tokens, never series colours.
+
+## CSV downloads
+- Every visualization card has a "⤓ CSV" link (`a.csv-link[data-csv]`) beside its title, inside `.chart-title`.
+- `main.js` builds the file on click from the current run: a Blob with a UTF-8 BOM (for Excel), named `washburn-roshambo_<card>_seed-<slug>_tick-<n>.csv`.
+- Pure row builders live in `game-view.js` (`toCsv` with RFC 4180 quoting):
+  - `populationRows`: `Person` 1…N, `Role`, `Blue_Necklaces`, `Gold_Necklaces`, as the user specified;
+  - `roleHistogramRows`, `colorHistogramRows` and `declineRows`: one row per plotted bar;
+  - `trendRows`: one row per tick, with the plotted percentages plus the raw counts behind them.
+- A new chart should get a `data-csv` key, a `*Rows` builder and an entry in `CSV_SOURCES`.
 
 ## Deployment
 - URL: https://difficult-tech.com/washburn_roshambo/ (next to /central_limit_dice/).

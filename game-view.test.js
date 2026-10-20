@@ -4,6 +4,7 @@ import {
   moveGlyph, matchSummary, classifyHolder, gridLayout, log2Edges, binLabel, histogram,
   linearScale, niceTicks, pct, fmtPct, fmtClock, personLabel, TREND_SERIES,
   markRadius, sizeKeyValues, roleHistogram, colorHistogram, declinePayoff, axisScale, niceStep, BREAK_GAP, MARK_EMPTY, MARK_MIN, MARK_MAX,
+  toCsv, populationRows, roleHistogramRows, colorHistogramRows, trendRows, declineRows, slug,
 } from './game-view.js';
 import { MOVES, STAFF, STUDENT } from './game.js';
 
@@ -214,4 +215,65 @@ test('axisScale: several tall bars share the upper section', () => {
   assert.equal(s.broken, true);
   assert.ok(s.highBottom < 900 && s.highTop >= 1500);
   assert.ok(s.y(1500) < s.y(900));
+});
+
+// ---------- CSV downloads ----------
+
+const csvPop = () => ({
+  size: 5,
+  role: Uint8Array.from([STUDENT, STUDENT, STUDENT, STAFF, STAFF]),
+  blue: Int32Array.from([0, 1, 3, 0, 2]),
+  gold: Int32Array.from([0, 0, 1, 1, 0]),
+  declines: Int32Array.from([0, 1, 0, 0, 0]),
+  declineChances: Int32Array.from([0, 2, 1, 0, 0]),
+});
+
+test('toCsv quotes fields with commas, quotes or line breaks', () => {
+  assert.equal(toCsv([['a', 'b'], [1, 'x,y'], ['say "hi"', 'two\nlines'], [null, undefined]]),
+    'a,b\r\n1,"x,y"\r\n"say ""hi""","two\nlines"\r\n,\r\n');
+});
+
+test('populationRows: Person is 1…N with role and both counts', () => {
+  const rows = populationRows(csvPop());
+  assert.deepEqual(rows[0], ['Person', 'Role', 'Blue_Necklaces', 'Gold_Necklaces']);
+  assert.deepEqual(rows.slice(1), [
+    [1, 'Student', 0, 0], [2, 'Student', 1, 0], [3, 'Student', 3, 1], [4, 'Teacher', 0, 1], [5, 'Teacher', 2, 0],
+  ]);
+});
+
+test('roleHistogramRows / colorHistogramRows match the chart bins', () => {
+  const pop = csvPop(); // totals: 0, 1, 4 · teachers 1, 2
+  const role = roleHistogramRows(pop);
+  assert.deepEqual(role[0], ['Necklaces_Held', 'Bin_Min', 'Bin_Max', 'Students', 'Teachers', 'Total']);
+  assert.deepEqual(role.slice(1), [['0', 0, 0, 1, 0, 1], ['1', 1, 1, 1, 1, 2], ['2', 2, 2, 0, 1, 1], ['3–4', 3, 4, 1, 0, 1]]);
+  const colour = colorHistogramRows(pop);
+  assert.deepEqual(colour.slice(1), [['1', 1, 1, 1, 2], ['2', 2, 2, 1, 0], ['3–4', 3, 4, 1, 0]]);
+  // every person with at least one necklace is counted once in the role rows
+  assert.equal(role.slice(1).reduce((a, r) => a + r[5], 0), pop.size);
+});
+
+test('trendRows: one row per history entry with the plotted percentages', () => {
+  const history = [
+    { tick: 0, studentGold: 0, gold: 150, staffBlue: 0, blue: 1600, empty: 0, active: 1750, out: 0, games: 0, declined: 0 },
+    { tick: 13, studentGold: 30, gold: 150, staffBlue: 160, blue: 1600, empty: 175, active: 1500, out: 250, games: 30, declined: 10 },
+  ];
+  const rows = trendRows(history);
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].length, rows[1].length);
+  assert.deepEqual(rows[2].slice(0, 6), [13, '1:05', 20, 10, 10, 25]);
+  assert.deepEqual(rows[2].slice(6), [30, 150, 160, 1600, 175, 1750, 30, 10, 1500]);
+});
+
+test('declineRows: one row per decline-rate group', () => {
+  const rows = declineRows(csvPop());
+  assert.deepEqual(rows[0], ['Decline_Rate', 'Students', 'Average_Necklaces', 'Average_Chances_To_Decline', 'Pct_Holding_None']);
+  assert.equal(rows.length, 7);
+  assert.deepEqual(rows[1], ['0%', 1, 4, 1, 0]);
+  assert.deepEqual(rows[4], ['50–74%', 1, 1, 2, 0]);
+});
+
+test('slug makes file-name-safe seeds', () => {
+  assert.equal(slug('Monday rules!'), 'monday-rules');
+  assert.equal(slug(1234), '1234');
+  assert.equal(slug('***'), 'run');
 });
