@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How Washburn Roshambo Was Made</title>
+  <meta name="description" content="The complete conversation between a teacher and Claude, an AI coding assistant, that built the Washburn Roshambo simulator: every request, reply, command, file edit and screenshot.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="making-of">
+  <main class="viz-root">
+    <header>
+      <div class="intro">
+        <p class="crumb"><a href="./">← Back to the simulator</a></p>
+        <h1>How it was made</h1>
+        <p class="lede">
+          The <a href="./">Washburn Roshambo simulator</a> was written by <strong>Claude</strong>, an AI coding assistant,
+          working inside a code editor and guided by a teacher's requests. Below is the whole conversation:
+          what was asked, what Claude said back, and every command it ran and file it changed along the way.
+          The finished code is on <a data-repo-link href="https://github.com/donniet/washburn_roshambo" target="_blank" rel="noopener">GitHub</a>.
+        </p>
+      </div>
+    </header>
+
+    <section class="stats" aria-label="About the conversation">
+      <div class="stat hero">
+        <span class="label">Requests from the teacher</span>
+        <span class="value" id="stat-requests">—</span>
+        <span class="sub">each one starts a section below</span>
+      </div>
+      <div class="stat">
+        <span class="label">Tool calls by Claude</span>
+        <span class="value" id="stat-tools">—</span>
+        <span class="sub" id="stat-tools-sub"></span>
+      </div>
+      <div class="stat">
+        <span class="label">Screenshots Claude checked</span>
+        <span class="value" id="stat-screens">—</span>
+        <span class="sub">to see its own work</span>
+      </div>
+      <div class="stat">
+        <span class="label">Days of work</span>
+        <span class="value" id="stat-days">—</span>
+        <span class="sub" id="stat-days-sub"></span>
+      </div>
+    </section>
+
+    <details class="explain" open>
+      <summary>How to read this page</summary>
+      <ul>
+        <li><strong>Teacher</strong> messages are the requests, typed in plain English. <strong>Claude</strong> messages are its replies.</li>
+        <li>The grey rows between them are <strong>tool calls</strong>: Claude reading a file, editing code, running the tests, or taking
+          a screenshot of the page to check its work. Click a row to see exactly what it did and what came back.</li>
+        <li>Some messages were interrupted or sent while Claude was busy; those are marked.</li>
+        <li>What's left out: Claude's private working notes, background instructions from the software, and personal details
+          such as an email address. Very long file contents and outputs are shortened; the full code is on GitHub.</li>
+      </ul>
+    </details>
+
+    <details class="explain">
+      <summary>Things to notice (for discussing in class)</summary>
+      <ul>
+        <li><strong>Plan first.</strong> The first request asked only for a plan, and the teacher corrected it twice before any code was written.</li>
+        <li><strong>Asking instead of guessing.</strong> Claude asked questions when a rule was ambiguous (what happens to a teacher's beads? does a decline use up time?).</li>
+        <li><strong>Tests.</strong> Every feature came with automated tests. Several times the tests themselves were wrong, and Claude fixed the test, not the code. Can you find one?</li>
+        <li><strong>Checking with screenshots.</strong> Claude looked at the page after most changes and caught real problems that way: gold necklaces that had become invisible, a page wider than a phone screen.</li>
+        <li><strong>Statistics traps.</strong> Look for the discussion of the "Does declining pay off?" chart and <em>survivorship bias</em>: why a chart can look like it proves something when it doesn't.</li>
+        <li><strong>The human stays in charge.</strong> The teacher changed direction several times ("ignore my previous comment", "let's hold on that idea"). Claude followed the teacher's judgement.</li>
+      </ul>
+    </details>
+
+    <details class="explain">
+      <summary>Jump to a request</summary>
+      <ol class="toc" id="toc"></ol>
+    </details>
+
+    <section class="controls transcript-controls" aria-label="Transcript display">
+      <label class="toggle"><input type="checkbox" id="show-tools" checked> Show Claude's tool calls</label>
+      <div class="control buttons"><button type="button" id="expand-tools">Expand all tool calls</button></div>
+    </section>
+
+    <div id="transcript" class="transcript" aria-live="polite">Loading the conversation…</div>
+
+    <footer class="site-footer">
+      <a href="./">← Back to the simulator</a>
+      <a data-repo-link href="https://github.com/donniet/washburn_roshambo" target="_blank" rel="noopener">Code on GitHub</a>
+    </footer>
+  </main>
+  <script type="module" src="making-of.js"></script>
+</body>
+</html>

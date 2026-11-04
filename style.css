@@ -479,3 +479,80 @@ fieldset.rule legend {
   .hand { font-size: 1.8rem; }
   .before-after { font-size: 0.8rem; gap: 2px 8px; }
 }
+
+/* ---------- footer (both pages) ---------- */
+.site-footer {
+  display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between;
+  margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+.site-footer a, .making-of .lede a, .crumb a { color: var(--accent); }
+
+/* ---------- making-of page ---------- */
+.crumb { margin: 0 0 6px; font-size: 0.9rem; }
+.toc { margin: 8px 0 0; padding-left: 24px; color: var(--text-secondary); }
+.toc li { margin: 4px 0; }
+.toc a { color: var(--text-primary); text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+.transcript-controls { margin-top: 16px; align-items: center; }
+.transcript-controls .toggle { padding-bottom: 0; }
+
+.transcript { display: flex; flex-direction: column; gap: 20px; }
+.turn { display: flex; flex-direction: column; gap: 10px; scroll-margin-top: 16px; }
+.turn + .turn { padding-top: 20px; border-top: 1px dashed var(--border); }
+
+.msg { border-radius: 12px; padding: 12px 16px; min-width: 0; }
+.msg.user { background: var(--surface-1); border: 1px solid var(--border); border-left: 4px solid var(--accent); }
+.msg.user.mid-turn { border-left-style: dashed; }
+.msg.claude { padding-left: 4px; padding-right: 4px; }
+.who { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.who time { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-muted); margin-left: 6px; }
+
+.md { overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md pre, .md blockquote, .md .md-table { margin: 0 0 10px; }
+.md ul, .md ol { padding-left: 22px; }
+.md li { margin: 2px 0; }
+.md h3, .md h4, .md h5, .md h6 { font-size: 1rem; margin: 14px 0 6px; }
+.md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; background: var(--grid); padding: 1px 5px; border-radius: 4px; }
+.md pre, .tool pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82rem; line-height: 1.45;
+  background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  overflow-x: auto; white-space: pre; max-height: 420px;
+}
+.md pre code { background: none; padding: 0; font-size: inherit; }
+.md blockquote { border-left: 3px solid var(--border); padding-left: 12px; color: var(--text-secondary); }
+.md hr { border: 0; border-top: 1px solid var(--border); }
+.md a { color: var(--accent); }
+.md-table { overflow-x: auto; }
+.md table { border-collapse: collapse; font-size: 0.9rem; }
+.md th, .md td { border: 1px solid var(--border); padding: 4px 10px; text-align: left; vertical-align: top; }
+.md th { background: var(--surface-1); }
+
+.tools { display: flex; flex-direction: column; gap: 4px; }
+.hide-tools .tools { display: none; }
+.tool { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-1); font-size: 0.88rem; min-width: 0; }
+.tool summary {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; cursor: pointer;
+  padding: 6px 10px; list-style: none; color: var(--text-secondary);
+}
+.tool summary::-webkit-details-marker { display: none; }
+.tool summary::before { content: "▸"; color: var(--text-muted); }
+.tool[open] summary::before { content: "▾"; }
+.tool-name { font-weight: 600; color: var(--text-primary); }
+.tool-title { min-width: 0; overflow-wrap: anywhere; }
+.tool-badge { font-size: 0.75rem; border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; color: var(--text-secondary); }
+.tool-badge.warn { border-color: var(--axis); }
+.tool[open] { padding-bottom: 8px; }
+.tool-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 6px 12px 4px; }
+.tool pre { margin: 0 10px; }
+.tool img { display: block; max-width: calc(100% - 20px); margin: 8px 10px 0; border: 1px solid var(--border); border-radius: 6px; }
+
+.chip { align-self: flex-start; font-size: 0.82rem; color: var(--text-secondary); background: var(--surface-1); border: 1px dashed var(--axis); border-radius: 999px; padding: 2px 12px; overflow-wrap: anywhere; }
+.chip.interrupt, .chip.notice { border-style: solid; }
+
+@media (max-width: 720px) {
+  .msg.user { padding: 10px 12px; }
+  .md pre, .tool pre { font-size: 0.75rem; }
+}

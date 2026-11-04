@@ -23,6 +23,21 @@ Keep the JS in these four files (the user asked for few files); each has a sibli
 
 Dependencies go one way: `main.js` → `game-view.js` / `strategies.js` → `game.js`.
 
+The "How it was made" page is separate from the simulator code:
+
+| File | Contents |
+|---|---|
+| `making-of.html`, `making-of.js` (+ `making-of.test.js`) | Renders this Claude Code conversation for students, styled like Claude Code: your messages, Claude's replies (a small, tested, HTML-escaping Markdown renderer), and collapsible tool-call rows with lazy-built input/output and screenshots. Relative file links in replies point at GitHub (`resolveLink`). |
+| `tools/build_making_of.py` | Builds `making-of/transcript.json` + `making-of/img/*` from the session `.jsonl`. |
+| `making-of/` | Generated data. Re-run the builder to refresh; don't hand-edit. |
+
+- **Refresh** after more conversation: `python3 tools/build_making_of.py ~/.claude/projects/-home-donniet-src-washburn-bead-necklace-game-simulator/<session>.jsonl`.
+- **The builder keeps only the visible conversation:** user messages (including mid-turn `queued_command` ones), Claude's text, tool calls and results, and screenshots.
+- **It drops:** Claude's private reasoning, system reminders and internal records.
+- **It cleans:** it removes email addresses, shortens `$HOME` to `~` and temp folders to `scratchpad` / `/tmp/claude/`, and clips long text at 3,000 characters.
+- **Don't comb through the transcript's internal (non-message) records when working on this.** An automatic safety check stopped that once.
+- The main page's footer links to `making-of.html` and to GitHub.
+
 ## Model and rules
 - **Population:** typed arrays `role` (0 student / 1 staff), `blue`, `gold`, `gamesPlayed`, `slotsUsed`, `declines`, `declinedAgainst`, and `strategyId`.
   - `slotsUsed` counts games plus declines on either side; it's what the per-person time limit checks.
@@ -152,4 +167,4 @@ This page deploys next to **Central Limit Dice** (`~/src/central_limit_visualize
 - **Stage 4 extras (optional):** a "compare two rule sets with the same seed" mode, and a table view of the chart data.
 - **"Show a game from this tick"** is disabled when a run ends early, because the final tick had no games.
 - **Chart text on phones:** it gets small because the viewBox scales, the same as on the sibling page.
-- The project isn't a git repository yet.
+- Repo: https://github.com/donniet/washburn_roshambo (branch `main`). The user makes the commits.
